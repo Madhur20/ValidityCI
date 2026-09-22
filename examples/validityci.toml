@@ -1,0 +1,8 @@
+[experiment]
+task_type = "binary_classification"
+target_column = "churned"
+primary_metric = "accuracy"
+entity_column = "customer_id"
+positive_class = "1"
+random_seed = 42
+
