@@ -11,6 +11,8 @@ from validityci.schemas import (
     ExecutionRequest,
     ExecutionStatus,
     ExperimentConfig,
+    MetricCaptureStatus,
+    MetricSelector,
     ResourceLimits,
 )
 from validityci.notebook import cells_containing, inspect_notebook
@@ -37,6 +39,10 @@ def audit_experiment(
             notebook_path=str(notebook_path),
             data_paths=(str(data_path),),
             working_directory=str(notebook_path.parent),
+            metric_selector=MetricSelector(
+                metric_name=config.primary_metric,
+                variable_name=config.primary_metric_variable,
+            ),
             limits=limits or ResourceLimits(),
             network_enabled=False,
         )
@@ -55,7 +61,14 @@ def audit_experiment(
         execution.status is not ExecutionStatus.SUCCEEDED
         for execution in executions
     )
-    if execution_failed:
+    primary_metric_captured = any(
+        metric.metric_name == config.primary_metric
+        and metric.status is MetricCaptureStatus.CAPTURED
+        for execution in executions
+        for metric in execution.metrics
+    )
+    metric_capture_incomplete = bool(executions) and not primary_metric_captured
+    if execution_failed or metric_capture_incomplete:
         status = AuditStatus.INCOMPLETE
     elif findings:
         status = AuditStatus.ATTENTION_REQUIRED

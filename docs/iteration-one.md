@@ -17,6 +17,7 @@
 - Execute supported notebooks inside a restricted container — completed
 - Disable network access and enforce CPU, memory, process, and time limits — implemented
 - Capture cell failures, output fingerprints, and runtime — implemented
+- Capture normalized scikit-learn metric artifacts with a manifest-variable fallback — implemented
 - Capture a normalized environment fingerprint — pending
 - Compare two executions automatically and verify the declared metric — pending
 

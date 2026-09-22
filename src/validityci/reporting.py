@@ -56,10 +56,37 @@ def write_html(report: AuditReport, path: str | Path) -> None:
             if execution.failure is None or execution.failure.cell_index is None
             else f" · cell {execution.failure.cell_index}"
         )
+        metric_items = []
+        for metric in execution.metrics:
+            if metric.value is None:
+                metric_detail = escape(metric.reason or "Metric was not observed")
+            else:
+                location = (
+                    ""
+                    if metric.cell_index is None
+                    else f" · cell {metric.cell_index}"
+                )
+                sample_count = (
+                    ""
+                    if metric.sample_count is None
+                    else f" · {metric.sample_count} samples"
+                )
+                metric_detail = (
+                    f"<code>{metric.value:.12g}</code>{location}{sample_count} "
+                    f"· {escape(metric.capture_method.replace('_', ' '))}"
+                )
+            metric_items.append(
+                f"<li><strong>{escape(metric.metric_name)}</strong>: "
+                f"{metric_detail}</li>"
+            )
+        metrics = (
+            f"<ul>{''.join(metric_items)}</ul>" if metric_items else ""
+        )
         execution_items.append(
             "<li>"
             f"<strong>{escape(execution.status.replace('_', ' '))}</strong>{cell} "
             f"· {execution.duration_ms} ms<br>{detail}"
+            f"{metrics}"
             "</li>"
         )
     execution_section = (

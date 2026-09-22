@@ -2,7 +2,7 @@
 
 ## Thirty-second explanation
 
-ValidityCI is an independent validation gate for machine-learning experiments. Instead of reviewing whether notebook code looks reasonable, it executes a declared experiment in a restricted environment and builds evidence about what actually happened. The current system supports a pandas and scikit-learn notebook, detects an unsuitable accuracy metric for an imbalanced binary target, and produces versioned JSON and HTML reports. The next work is structured runtime metric capture, followed by leakage and preprocessing-order checks.
+ValidityCI is an independent validation gate for machine-learning experiments. Instead of reviewing whether notebook code looks reasonable, it executes a declared experiment in a restricted environment and builds evidence about what actually happened. The current system supports a pandas and scikit-learn notebook, captures supported metric calls as structured runtime artifacts, detects an unsuitable accuracy metric for an imbalanced binary target, and produces versioned JSON and HTML reports. The next work is repeated-execution comparison, followed by lineage instrumentation and leakage checks.
 
 ## Why this is not another AI code reviewer
 
@@ -16,7 +16,8 @@ The important failures in ML experiments are often methodological rather than sy
 4. A real smoke test found that `nbclient` alone did not provide a Python kernel; adding `ipykernel` fixed the end-to-end runtime.
 5. Adversarial notebooks verified that host files, environment variables, writes to input, and external networking were unavailable.
 6. Failures remain first-class results: cell errors identify the cell and cause, timeouts remove the workload, and unavailable infrastructure produces `incomplete` rather than a false pass.
-7. Repeated execution currently compares output fingerprints, but the project deliberately does not claim metric reproducibility until normalized metric artifacts exist.
+7. Normalized metrics now make a stronger comparison possible, but the project does not claim automated metric reproducibility until the two-run comparison is implemented.
+8. Metric instrumentation uses hidden execution cells so user source remains unchanged; unsupported capture remains separate from failed execution.
 
 ## Useful deep-dive questions
 
@@ -36,6 +37,10 @@ A timeout or missing dependency is not evidence that the experiment failed a val
 
 It proves that the normalized notebook outputs matched for the tested runs. It does not prove that the methodology was valid, that every environment detail matched, or that the metric was computed from the right data. Those require separate evidence.
 
+### Why both runtime wrappers and a manifest variable?
+
+Runtime wrappers provide stronger provenance: the metric operation, original cell, sample count, and selected parameters. Custom metric code may not call a supported function, so one explicitly named numeric variable is allowed as a fallback. The report records which method was used and returns `unsupported` instead of guessing when neither works; the audit remains `incomplete` until the primary metric is captured.
+
 ### Where will AI appear?
 
 After deterministic evidence and an investigator benchmark exist. The proposed agent will have narrow tools for reading findings, execution records, lineage, and policies. Its output must cite evidence identifiers, and unsupported claims should be rejected or replaced with a deterministic summary.
@@ -44,7 +49,7 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 
 - The supported execution environment is intentionally limited to Python, pandas, and scikit-learn.
 - There is one deterministic validity check today: metric suitability for imbalanced binary classification.
-- Runtime metric calls are not yet captured as structured artifacts.
+- Runtime capture currently covers six scikit-learn metric functions; estimator `.score`, custom functions, and third-party metric libraries need explicit support or the manifest fallback.
 - Output comparison does not yet explain which cell or value changed.
 - Dependency locking and environment fingerprinting are not complete.
 - Docker reduces exposure but is not sufficient isolation for arbitrary hostile multi-tenant workloads.
@@ -56,7 +61,8 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 2. Run again with `--execute` and show the successful execution record and output fingerprint.
 3. Show a notebook with a seeded cell error and the exact cell/cause in the report.
 4. Explain why the status becomes `incomplete` for runner failures rather than “passed” or “invalid.”
-5. End with the next milestone: capturing a metric as structured runtime evidence and comparing it across fresh executions.
+5. Show the normalized `accuracy = 0.9` artifact, its original cell, and its 20-sample count.
+6. End with the next milestone: comparing normalized metrics and output fingerprints across fresh executions.
 
 ## Claims to avoid
 

@@ -545,7 +545,7 @@ Advancement depends on exit criteria, not elapsed weeks.
 
 ### 1. Versioned schemas — completed
 
-The report contract now uses schema version `1.1.0`, immutable slotted models, explicit round-trip serialization, controlled enums, unique identifiers, and evidence-reference validation. Execution records use their own `1.0.0` contract.
+The report contract now uses schema version `1.2.0`, immutable slotted models, explicit round-trip serialization, controlled enums, unique identifiers, and evidence-reference validation. Execution records use their own `1.1.0` contract.
 
 ### 2. Runner protocol — completed
 
@@ -555,9 +555,9 @@ The audit flow now accepts a runner interface independent of Docker. Its request
 
 The Docker backend stages only declared inputs and runs as a non-root user with networking disabled, a read-only root filesystem, dropped capabilities, no privilege escalation, and CPU, memory, process, output, and wall-time limits. It captures successful fingerprints, cell failures, timeouts, and runner failures. Automated tests cover the generated security command and input staging. Live container tests confirmed successful example execution, stable output fingerprints, exact cell-error attribution, timeout cleanup, and blocking of unstaged host files, host environment variables, writes to the input mount, and external network connections.
 
-### 4. Normalized metric artifact
+### 4. Normalized metric artifact — completed
 
-Capture supported metric calls through instrumentation, with an explicit manifest selector as fallback. Missing metrics must produce `unsupported`.
+The runner captures supported scikit-learn metric calls inside the notebook kernel and records the normalized name, finite value, original cell, sample count, capture method, and safe scalar parameters. A declared manifest variable is used only when the expected metric was not observed through instrumentation. If neither source produces a finite number, execution still succeeds but the metric artifact is explicitly `unsupported` and the overall audit remains `incomplete`.
 
 ### 5. Repeated execution comparison
 

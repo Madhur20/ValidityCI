@@ -25,6 +25,7 @@ class ConfigTests(unittest.TestCase):
                 'task_type = "binary_classification"\n'
                 'target_column = "outcome"\n'
                 'primary_metric = "f1"\n'
+                'primary_metric_variable = "validation_f1"\n'
                 'entity_column = "customer_id"\n',
                 encoding="utf-8",
             )
@@ -32,6 +33,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(config.target_column, "outcome")
         self.assertEqual(config.entity_column, "customer_id")
+        self.assertEqual(config.primary_metric_variable, "validation_f1")
         self.assertEqual(config.random_seed, 42)
 
 

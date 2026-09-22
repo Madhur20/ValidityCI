@@ -14,6 +14,10 @@ from validityci.schemas import (
     ExecutionRequest,
     ExecutionResult,
     ExecutionStatus,
+    MetricArtifact,
+    MetricCaptureMethod,
+    MetricCaptureStatus,
+    MetricSelector,
     ResourceLimits,
 )
 
@@ -25,12 +29,16 @@ class ExecutionSchemaTests(unittest.TestCase):
             notebook_path="/workspace/experiment.ipynb",
             data_paths=("/workspace/data.csv",),
             working_directory="/workspace",
+            metric_selector=MetricSelector(
+                metric_name="accuracy", variable_name="accuracy"
+            ),
         )
         result = ExecutionResult(
             execution_id="execution.original",
             status=ExecutionStatus.SUCCEEDED,
             duration_ms=125,
             output_fingerprint="sha256:abc123",
+            metrics=(self._captured_metric(),),
         )
 
         restored_request = ExecutionRequest.from_dict(
@@ -42,6 +50,32 @@ class ExecutionSchemaTests(unittest.TestCase):
 
         self.assertEqual(restored_request, request)
         self.assertEqual(restored_result, result)
+
+    def test_unsupported_metric_round_trips_without_a_value(self) -> None:
+        artifact = MetricArtifact(
+            id="metric.1",
+            metric_name="accuracy",
+            status=MetricCaptureStatus.UNSUPPORTED,
+            capture_method=MetricCaptureMethod.NOT_OBSERVED,
+            reason="No supported runtime call was observed",
+        )
+
+        restored = MetricArtifact.from_dict(
+            json.loads(json.dumps(artifact.to_dict()))
+        )
+
+        self.assertEqual(restored, artifact)
+        self.assertIsNone(restored.value)
+
+    def test_captured_metric_rejects_non_finite_value(self) -> None:
+        with self.assertRaisesRegex(ValueError, "finite"):
+            MetricArtifact(
+                id="metric.1",
+                metric_name="accuracy",
+                status=MetricCaptureStatus.CAPTURED,
+                capture_method=MetricCaptureMethod.RUNTIME_WRAPPER,
+                value=float("nan"),
+            )
 
     def test_success_requires_fingerprint(self) -> None:
         with self.assertRaisesRegex(ValueError, "output_fingerprint"):
@@ -62,6 +96,18 @@ class ExecutionSchemaTests(unittest.TestCase):
     def test_limits_must_be_positive(self) -> None:
         with self.assertRaisesRegex(ValueError, "timeout_seconds must be positive"):
             ResourceLimits(timeout_seconds=0)
+
+    @staticmethod
+    def _captured_metric() -> MetricArtifact:
+        return MetricArtifact(
+            id="metric.1",
+            metric_name="accuracy",
+            status=MetricCaptureStatus.CAPTURED,
+            capture_method=MetricCaptureMethod.RUNTIME_WRAPPER,
+            value=0.9,
+            cell_index=1,
+            sample_count=10,
+        )
 
 
 class FakeRunnerTests(unittest.TestCase):
@@ -127,6 +173,7 @@ class RunnerOrchestrationTests(unittest.TestCase):
             status=ExecutionStatus.SUCCEEDED,
             duration_ms=10,
             output_fingerprint="sha256:stable",
+            metrics=(ExecutionSchemaTests._captured_metric(),),
         )
         runner = FakeRunner([result])
 
@@ -136,6 +183,10 @@ class RunnerOrchestrationTests(unittest.TestCase):
         self.assertEqual(report.status, AuditStatus.ATTENTION_REQUIRED)
         self.assertFalse(runner.requests[0].network_enabled)
         self.assertEqual(runner.requests[0].limits, ResourceLimits())
+        self.assertEqual(
+            runner.requests[0].metric_selector,
+            MetricSelector(metric_name="accuracy", variable_name="accuracy"),
+        )
 
     def test_cell_failure_makes_report_incomplete(self) -> None:
         runner = FakeRunner(
@@ -178,6 +229,27 @@ class RunnerOrchestrationTests(unittest.TestCase):
         self.assertEqual(report.status, AuditStatus.INCOMPLETE)
         self.assertEqual(runner.requests[0].limits.timeout_seconds, 1)
 
+    def test_unsupported_primary_metric_makes_report_incomplete(self) -> None:
+        result = ExecutionResult(
+            execution_id="execution.original",
+            status=ExecutionStatus.SUCCEEDED,
+            duration_ms=10,
+            output_fingerprint="sha256:stable",
+            metrics=(
+                MetricArtifact(
+                    id="metric.1",
+                    metric_name="accuracy",
+                    status=MetricCaptureStatus.UNSUPPORTED,
+                    capture_method=MetricCaptureMethod.NOT_OBSERVED,
+                    reason="No supported runtime call was observed",
+                ),
+            ),
+        )
+
+        report = self._audit(FakeRunner([result]))
+
+        self.assertEqual(report.status, AuditStatus.INCOMPLETE)
+
     def test_execution_failure_is_visible_in_html_report(self) -> None:
         runner = FakeRunner(
             [
@@ -204,6 +276,25 @@ class RunnerOrchestrationTests(unittest.TestCase):
         self.assertIn("cell failed", rendered)
         self.assertIn("cell 4", rendered)
         self.assertIn("NameError: model is not defined", rendered)
+
+    def test_captured_metric_is_visible_in_html_report(self) -> None:
+        result = ExecutionResult(
+            execution_id="execution.original",
+            status=ExecutionStatus.SUCCEEDED,
+            duration_ms=10,
+            output_fingerprint="sha256:stable",
+            metrics=(ExecutionSchemaTests._captured_metric(),),
+        )
+        report = self._audit(FakeRunner([result]))
+
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "audit.html"
+            write_html(report, output)
+            rendered = output.read_text(encoding="utf-8")
+
+        self.assertIn("accuracy", rendered)
+        self.assertIn("0.9", rendered)
+        self.assertIn("10 samples", rendered)
 
     @staticmethod
     def _audit(

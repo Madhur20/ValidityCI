@@ -88,10 +88,36 @@ The notebook succeeded only because all four operations were unavailable. Declar
 
 ## H-009 — An output fingerprint is not yet a metric artifact
 
-**Type:** Known limitation
+**Type:** Resolved limitation
 
-The runner hashes normalized notebook outputs and can show that the included example produced the same output twice. It does not yet extract “accuracy = 0.90” as a structured metric with its arguments, cell, dataset lineage, and semantic meaning.
+The runner originally hashed normalized notebook outputs and could show that the included example produced the same output twice, but it could not extract “accuracy = 0.90” as a structured value. Output equality alone was weaker than understanding the operation that produced the value.
 
-The next milestone is runtime metric capture. Until that exists, a matching fingerprint demonstrates output stability, not scientific reproducibility or metric correctness.
+The runner now wraps a declared set of scikit-learn metric functions inside the kernel and emits normalized artifacts with a name, value, cell, sample count, capture method, and safe scalar parameters. The example produced `accuracy = 0.9` from cell 1 across 20 samples. Dataset lineage and full metric semantics remain future work.
 
 **Lesson:** Byte-level or JSON-level equality is useful evidence, but it is weaker than understanding the operation that produced the value.
+
+## H-010 — Instrumentation must not rewrite user source
+
+**Type:** Observed during implementation review
+
+The first instrumentation design prepended setup code and a current-cell marker to user code cells. This worked for the example but would make a valid `from __future__ import ...` statement illegal because future imports must remain at the beginning of a module-like cell. Source rewriting could also interfere with magics or source-sensitive code.
+
+The runner now inserts separate hidden setup, cell-marker, and collector cells into an in-memory execution copy. Original cell objects receive their normal outputs, while user source remains unchanged. Synthetic cells are removed before output fingerprinting.
+
+Hidden cells also change Jupyter execution counters. Those counters and transient display identifiers are therefore excluded from fingerprint input; otherwise instrumentation alone could create a false reproducibility difference.
+
+**Verification:** A live notebook beginning with `from __future__ import annotations` executed successfully and produced a metric artifact through the manifest fallback.
+
+**Lesson:** Instrumentation that appears semantically harmless can violate language-level placement rules. Preserving user source is a stronger default than trying to enumerate every special case.
+
+## H-011 — A missing metric should not fail notebook execution
+
+**Type:** Design decision verified in a live test
+
+A notebook can execute successfully even when ValidityCI cannot establish its declared primary metric. Turning that into a runner failure would confuse compatibility with execution correctness; omitting it would create false confidence.
+
+The collector first uses supported runtime calls, then an explicitly named finite variable. If both are absent, it emits an `unsupported` metric artifact with a reason while leaving execution status as `succeeded`. The overall audit becomes `incomplete`, preventing unsupported evidence from appearing as a pass.
+
+**Verification:** A notebook containing only `answer = 42` completed successfully and returned an unsupported accuracy artifact because its configured fallback variable did not exist.
+
+**Lesson:** Unsupported evidence is a first-class result. It must never be silently converted into pass, zero, or execution failure.

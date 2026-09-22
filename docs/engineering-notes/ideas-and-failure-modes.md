@@ -66,13 +66,15 @@ Possible response: store aggregates and fingerprints by default, redact known se
 
 Metrics may be produced through `sklearn.metrics`, estimator `.score`, custom functions, third-party libraries, or hand-written NumPy expressions. Monkey-patching one public function will miss aliases and imported references.
 
-Possible response: start with a declared supported surface, instrument before notebook imports, add a manifest selector as fallback, and return `unsupported` when provenance cannot be established.
+Current response: the runner instruments six declared scikit-learn functions before notebook imports, accepts one identifier-only manifest variable as a weaker fallback, records the capture method, and returns `unsupported` when neither path establishes the expected metric. Estimator `.score`, custom functions, and third-party libraries remain unsupported.
 
 ### Instrumentation can change behavior
 
 Wrapping arrays, dataframes, estimators, or functions may change identity checks, serialization, performance, exception behavior, or dispatch.
 
 Possible response: run instrumented and uninstrumented executions, compare normalized outputs and metrics, and keep a regression benchmark for observer effects.
+
+The first comparison is encouraging but narrow: the example retained the same output fingerprint before and after instrumentation. A larger differential benchmark is still required.
 
 ### Dataset lineage without raw data is difficult
 

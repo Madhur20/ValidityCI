@@ -12,8 +12,8 @@ from typing import Any, TypeAlias, cast
 import tomllib
 
 
-REPORT_SCHEMA_VERSION = "1.1.0"
-EXECUTION_SCHEMA_VERSION = "1.0.0"
+REPORT_SCHEMA_VERSION = "1.2.0"
+EXECUTION_SCHEMA_VERSION = "1.1.0"
 SUPPORTED_TASKS = frozenset({"binary_classification"})
 SUPPORTED_METRICS = frozenset(
     {"accuracy", "balanced_accuracy", "f1", "precision", "recall", "roc_auc"}
@@ -37,6 +37,17 @@ class ExecutionStatus(StrEnum):
     RUNNER_ERROR = "runner_error"
 
 
+class MetricCaptureStatus(StrEnum):
+    CAPTURED = "captured"
+    UNSUPPORTED = "unsupported"
+
+
+class MetricCaptureMethod(StrEnum):
+    RUNTIME_WRAPPER = "runtime_wrapper"
+    MANIFEST_VARIABLE = "manifest_variable"
+    NOT_OBSERVED = "not_observed"
+
+
 class Severity(StrEnum):
     INFO = "info"
     WARNING = "warning"
@@ -55,6 +66,7 @@ class ExperimentConfig:
     task_type: str
     target_column: str
     primary_metric: str
+    primary_metric_variable: str | None = None
     entity_column: str | None = None
     timestamp_column: str | None = None
     positive_class: str = "1"
@@ -68,6 +80,10 @@ class ExperimentConfig:
             raise ValueError(f"Unsupported task_type: {self.task_type}")
         if self.primary_metric not in SUPPORTED_METRICS:
             raise ValueError(f"Unsupported primary_metric: {self.primary_metric}")
+        if self.primary_metric_variable is not None:
+            _require_python_identifier(
+                "primary_metric_variable", self.primary_metric_variable
+            )
         if isinstance(self.random_seed, bool) or not isinstance(self.random_seed, int):
             raise TypeError("random_seed must be an integer")
 
@@ -88,6 +104,7 @@ class ExperimentConfig:
                 "task_type",
                 "target_column",
                 "primary_metric",
+                "primary_metric_variable",
                 "entity_column",
                 "timestamp_column",
                 "positive_class",
@@ -99,6 +116,9 @@ class ExperimentConfig:
             task_type=_string(raw, "task_type"),
             target_column=_string(raw, "target_column"),
             primary_metric=_string(raw, "primary_metric"),
+            primary_metric_variable=_optional_string(
+                raw.get("primary_metric_variable")
+            ),
             entity_column=_optional_string(raw.get("entity_column")),
             timestamp_column=_optional_string(raw.get("timestamp_column")),
             positive_class=_string(raw, "positive_class", default="1"),
@@ -110,6 +130,7 @@ class ExperimentConfig:
             "task_type": self.task_type,
             "target_column": self.target_column,
             "primary_metric": self.primary_metric,
+            "primary_metric_variable": self.primary_metric_variable,
             "entity_column": self.entity_column,
             "timestamp_column": self.timestamp_column,
             "positive_class": self.positive_class,
@@ -345,6 +366,150 @@ class Finding:
 
 
 @dataclass(frozen=True, slots=True)
+class MetricSelector:
+    metric_name: str
+    variable_name: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.metric_name not in SUPPORTED_METRICS:
+            raise ValueError(f"Unsupported metric selector: {self.metric_name}")
+        if self.variable_name is not None:
+            _require_python_identifier("metric variable", self.variable_name)
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "MetricSelector":
+        _reject_unknown(raw, {"metric_name", "variable_name"}, "metric selector")
+        return cls(
+            metric_name=_string(raw, "metric_name"),
+            variable_name=_optional_string(raw.get("variable_name")),
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "metric_name": self.metric_name,
+            "variable_name": self.variable_name,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MetricArtifact:
+    id: str
+    metric_name: str
+    status: MetricCaptureStatus
+    capture_method: MetricCaptureMethod
+    value: float | None = None
+    cell_index: int | None = None
+    sample_count: int | None = None
+    parameters: Mapping[str, JsonValue] = field(default_factory=dict)
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_identifier("metric artifact id", self.id)
+        if self.metric_name not in SUPPORTED_METRICS:
+            raise ValueError(f"Unsupported metric artifact: {self.metric_name}")
+        object.__setattr__(
+            self,
+            "status",
+            _enum_value(MetricCaptureStatus, self.status, "metric capture status"),
+        )
+        object.__setattr__(
+            self,
+            "capture_method",
+            _enum_value(MetricCaptureMethod, self.capture_method, "metric capture method"),
+        )
+        object.__setattr__(self, "parameters", _freeze_mapping(self.parameters))
+        if self.status is MetricCaptureStatus.CAPTURED:
+            if isinstance(self.value, bool) or not isinstance(self.value, (int, float)):
+                raise TypeError("Captured metrics require a numeric value")
+            value = float(self.value)
+            if not math.isfinite(value):
+                raise ValueError("Metric value must be finite")
+            object.__setattr__(self, "value", value)
+            if self.capture_method is MetricCaptureMethod.NOT_OBSERVED:
+                raise ValueError("Captured metrics require an observation method")
+            if self.reason is not None:
+                raise ValueError("Captured metrics cannot contain an unsupported reason")
+        else:
+            if self.capture_method is not MetricCaptureMethod.NOT_OBSERVED:
+                raise ValueError("Unsupported metrics must use method 'not_observed'")
+            if self.value is not None or self.cell_index is not None or self.sample_count is not None:
+                raise ValueError("Unsupported metrics cannot contain observed values")
+            if self.parameters:
+                raise ValueError("Unsupported metrics cannot contain parameters")
+            if self.reason is None:
+                raise ValueError("Unsupported metrics require a reason")
+            _require_non_empty("unsupported metric reason", self.reason)
+        if self.cell_index is not None:
+            _strict_int(self.cell_index, "metric cell_index")
+            if self.cell_index < 0:
+                raise ValueError("metric cell_index cannot be negative")
+        if self.sample_count is not None:
+            _strict_int(self.sample_count, "metric sample_count")
+            if self.sample_count < 0:
+                raise ValueError("metric sample_count cannot be negative")
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "MetricArtifact":
+        _reject_unknown(
+            raw,
+            {
+                "id",
+                "metric_name",
+                "status",
+                "capture_method",
+                "value",
+                "cell_index",
+                "sample_count",
+                "parameters",
+                "reason",
+            },
+            "metric artifact",
+        )
+        value = raw.get("value")
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+            raise TypeError("metric value must be numeric")
+        cell_index = raw.get("cell_index")
+        if cell_index is not None:
+            cell_index = _strict_int(cell_index, "metric cell_index")
+        sample_count = raw.get("sample_count")
+        if sample_count is not None:
+            sample_count = _strict_int(sample_count, "metric sample_count")
+        return cls(
+            id=_string(raw, "id"),
+            metric_name=_string(raw, "metric_name"),
+            status=_enum_value(
+                MetricCaptureStatus, _string(raw, "status"), "metric capture status"
+            ),
+            capture_method=_enum_value(
+                MetricCaptureMethod,
+                _string(raw, "capture_method"),
+                "metric capture method",
+            ),
+            value=None if value is None else float(value),
+            cell_index=cell_index,
+            sample_count=sample_count,
+            parameters=cast(
+                Mapping[str, JsonValue],
+                _mapping(raw.get("parameters", {}), "metric parameters"),
+            ),
+            reason=_optional_string(raw.get("reason")),
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "id": self.id,
+            "metric_name": self.metric_name,
+            "status": self.status.value,
+            "capture_method": self.capture_method.value,
+            "value": self.value,
+            "cell_index": self.cell_index,
+            "sample_count": self.sample_count,
+            "parameters": _thaw_mapping(self.parameters),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ResourceLimits:
     timeout_seconds: int = 300
     memory_mb: int = 2048
@@ -396,6 +561,7 @@ class ExecutionRequest:
     notebook_path: str
     data_paths: tuple[str, ...]
     working_directory: str
+    metric_selector: MetricSelector | None = None
     limits: ResourceLimits = field(default_factory=ResourceLimits)
     network_enabled: bool = False
     schema_version: str = EXECUTION_SCHEMA_VERSION
@@ -417,6 +583,10 @@ class ExecutionRequest:
         _require_unique(list(self.data_paths), "data paths")
         if not isinstance(self.limits, ResourceLimits):
             raise TypeError("limits must be ResourceLimits")
+        if self.metric_selector is not None and not isinstance(
+            self.metric_selector, MetricSelector
+        ):
+            raise TypeError("metric_selector must be MetricSelector")
         if not isinstance(self.network_enabled, bool):
             raise TypeError("network_enabled must be a boolean")
 
@@ -430,6 +600,7 @@ class ExecutionRequest:
                 "notebook_path",
                 "data_paths",
                 "working_directory",
+                "metric_selector",
                 "limits",
                 "network_enabled",
             },
@@ -438,6 +609,7 @@ class ExecutionRequest:
         network_enabled = _required(raw, "network_enabled")
         if not isinstance(network_enabled, bool):
             raise TypeError("network_enabled must be a boolean")
+        metric_selector = raw.get("metric_selector")
         return cls(
             schema_version=_string(raw, "schema_version"),
             execution_id=_string(raw, "execution_id"),
@@ -447,6 +619,13 @@ class ExecutionRequest:
                 for item in _sequence(raw, "data_paths")
             ),
             working_directory=_string(raw, "working_directory"),
+            metric_selector=(
+                None
+                if metric_selector is None
+                else MetricSelector.from_dict(
+                    _mapping(metric_selector, "metric selector")
+                )
+            ),
             limits=ResourceLimits.from_dict(
                 _mapping(_required(raw, "limits"), "resource limits")
             ),
@@ -460,6 +639,9 @@ class ExecutionRequest:
             "notebook_path": self.notebook_path,
             "data_paths": list(self.data_paths),
             "working_directory": self.working_directory,
+            "metric_selector": (
+                None if self.metric_selector is None else self.metric_selector.to_dict()
+            ),
             "limits": self.limits.to_dict(),
             "network_enabled": self.network_enabled,
         }
@@ -506,6 +688,7 @@ class ExecutionResult:
     duration_ms: int
     output_fingerprint: str | None = None
     failure: ExecutionFailure | None = None
+    metrics: tuple[MetricArtifact, ...] = ()
     schema_version: str = EXECUTION_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -521,6 +704,10 @@ class ExecutionResult:
         _strict_int(self.duration_ms, "duration_ms")
         if self.duration_ms < 0:
             raise ValueError("duration_ms cannot be negative")
+        object.__setattr__(self, "metrics", tuple(self.metrics))
+        if any(not isinstance(metric, MetricArtifact) for metric in self.metrics):
+            raise TypeError("metrics must contain MetricArtifact values")
+        _require_unique([metric.id for metric in self.metrics], "metric artifact IDs")
         if self.status is ExecutionStatus.SUCCEEDED:
             if self.output_fingerprint is None:
                 raise ValueError("Successful executions require an output_fingerprint")
@@ -546,6 +733,7 @@ class ExecutionResult:
                 "duration_ms",
                 "output_fingerprint",
                 "failure",
+                "metrics",
             },
             "execution result",
         )
@@ -563,6 +751,10 @@ class ExecutionResult:
                 if failure is None
                 else ExecutionFailure.from_dict(_mapping(failure, "execution failure"))
             ),
+            metrics=tuple(
+                MetricArtifact.from_dict(_mapping(item, "metric artifact"))
+                for item in _sequence(raw, "metrics")
+            ),
         )
 
     def to_dict(self) -> JsonObject:
@@ -573,6 +765,7 @@ class ExecutionResult:
             "duration_ms": self.duration_ms,
             "output_fingerprint": self.output_fingerprint,
             "failure": None if self.failure is None else self.failure.to_dict(),
+            "metrics": [metric.to_dict() for metric in self.metrics],
         }
 
 
@@ -614,12 +807,23 @@ class AuditReport:
             execution.status is not ExecutionStatus.SUCCEEDED
             for execution in self.executions
         )
-        if execution_failed and self.status is not AuditStatus.INCOMPLETE:
-            raise ValueError("Reports with unsuccessful executions must use status 'incomplete'")
-        if not execution_failed and self.findings and self.status is not AuditStatus.ATTENTION_REQUIRED:
+        primary_metric_captured = any(
+            metric.metric_name == self.config.primary_metric
+            and metric.status is MetricCaptureStatus.CAPTURED
+            for execution in self.executions
+            for metric in execution.metrics
+        )
+        metric_capture_incomplete = bool(self.executions) and not primary_metric_captured
+        audit_incomplete = execution_failed or metric_capture_incomplete
+        if audit_incomplete and self.status is not AuditStatus.INCOMPLETE:
+            raise ValueError(
+                "Reports with unsuccessful execution or unsupported primary metric "
+                "must use status 'incomplete'"
+            )
+        if not audit_incomplete and self.findings and self.status is not AuditStatus.ATTENTION_REQUIRED:
             raise ValueError("Reports with findings must use status 'attention_required'")
         if (
-            not execution_failed
+            not audit_incomplete
             and not self.findings
             and self.status is not AuditStatus.PASSED_SUPPORTED_CHECKS
         ):
@@ -764,6 +968,12 @@ def _require_identifier(label: str, value: str) -> None:
         raise ValueError(f"{label} cannot contain whitespace")
 
 
+def _require_python_identifier(label: str, value: str) -> None:
+    _require_non_empty(label, value)
+    if not value.isidentifier():
+        raise ValueError(f"{label} must be a Python identifier")
+
+
 def _require_unique(values: list[str], label: str) -> None:
     seen: set[str] = set()
     duplicates: set[str] = set()
@@ -829,6 +1039,10 @@ __all__ = [
     "ExecutionResult",
     "ExecutionStatus",
     "Finding",
+    "MetricArtifact",
+    "MetricCaptureMethod",
+    "MetricCaptureStatus",
+    "MetricSelector",
     "NotebookCell",
     "NotebookSummary",
     "ResourceLimits",

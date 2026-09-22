@@ -2,7 +2,7 @@
 
 ValidityCI is an independent verification layer for machine-learning experiments. It is intended to reproduce an experiment, run deterministic validity checks, and produce an evidence-backed report before a result is approved or delivered.
 
-This repository contains a static audit and an opt-in restricted notebook runner. The static path safely reads a notebook, profiles a local CSV, checks whether the declared primary metric is appropriate for the observed class balance, and writes JSON and HTML audit reports. The Docker path executes supported notebooks without network access and records the execution result and output fingerprint.
+This repository contains a static audit and an opt-in restricted notebook runner. The static path safely reads a notebook, profiles a local CSV, checks whether the declared primary metric is appropriate for the observed class balance, and writes JSON and HTML audit reports. The Docker path executes supported notebooks without network access and records the execution result, output fingerprint, and normalized metric artifacts.
 
 ## Current scope
 
@@ -57,6 +57,8 @@ PYTHONPATH=src python3 -m validityci audit examples/imbalanced_churn.ipynb \
 The runner stages only the declared notebook and data files. The container has no network, a read-only root filesystem, no Linux capabilities, no privilege escalation, a non-root user, and explicit CPU, memory, process, output, and time limits. Docker itself is a prerequisite; ValidityCI does not silently fall back to host execution.
 
 The initial image supports Python notebooks using pandas and scikit-learn. Notebooks that require other packages are reported as execution failures; arbitrary dependency installation and network access are intentionally unsupported.
+
+For supported scikit-learn metrics, an execution record includes the metric name, value, original notebook cell, sample count, capture method, and safe scalar parameters. An optional `primary_metric_variable` in the experiment manifest provides a fallback for custom metric code. If neither a supported call nor a finite fallback variable can be observed, the metric is reported as `unsupported` rather than inferred.
 
 ## Run the tests
 

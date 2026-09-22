@@ -13,6 +13,10 @@ from validityci.schemas import (
     ExecutionRequest,
     ExecutionResult,
     ExecutionStatus,
+    MetricArtifact,
+    MetricCaptureMethod,
+    MetricCaptureStatus,
+    MetricSelector,
     ResourceLimits,
 )
 
@@ -27,6 +31,17 @@ class DockerRunnerTests(unittest.TestCase):
                 status=ExecutionStatus.SUCCEEDED,
                 duration_ms=42,
                 output_fingerprint="sha256:stable",
+                metrics=(
+                    MetricArtifact(
+                        id="metric.1",
+                        metric_name="accuracy",
+                        status=MetricCaptureStatus.CAPTURED,
+                        capture_method=MetricCaptureMethod.RUNTIME_WRAPPER,
+                        value=0.9,
+                        cell_index=0,
+                        sample_count=1,
+                    ),
+                ),
             )
             observed: dict[str, object] = {}
 
@@ -60,6 +75,8 @@ class DockerRunnerTests(unittest.TestCase):
         self.assertIn("256m", self._option_values(command, "--memory"))
         self.assertIn("1", self._option_values(command, "--cpus"))
         self.assertIn("32", self._option_values(command, "--pids-limit"))
+        self.assertIn("accuracy", self._option_values(command, "--metric-name"))
+        self.assertIn("accuracy", self._option_values(command, "--metric-variable"))
         self.assertNotIn("--privileged", command)
         self.assertEqual(observed["kwargs"]["timeout"], 2)  # type: ignore[index]
 
@@ -144,6 +161,9 @@ class DockerRunnerTests(unittest.TestCase):
             notebook_path=str(notebook),
             data_paths=(str(data),),
             working_directory=str(root),
+            metric_selector=MetricSelector(
+                metric_name="accuracy", variable_name="accuracy"
+            ),
             limits=ResourceLimits(
                 timeout_seconds=2,
                 memory_mb=256,

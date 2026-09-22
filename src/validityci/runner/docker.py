@@ -176,7 +176,7 @@ class DockerRunner:
         notebook_name: str,
     ) -> list[str]:
         limits = request.limits
-        return [
+        command = [
             self._docker_binary,
             "run",
             "--rm",
@@ -230,6 +230,15 @@ class DockerRunner:
             "--max-output-bytes",
             str(limits.max_output_bytes),
         ]
+        if request.metric_selector is not None:
+            command.extend(
+                ["--metric-name", request.metric_selector.metric_name]
+            )
+            if request.metric_selector.variable_name is not None:
+                command.extend(
+                    ["--metric-variable", request.metric_selector.variable_name]
+                )
+        return command
 
     def _remove_container(self, container_name: str) -> None:
         try:

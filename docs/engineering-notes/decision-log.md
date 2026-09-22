@@ -47,3 +47,15 @@ The first image supports Python 3.11, Jupyter execution, pandas, and scikit-lear
 Static checks still run when container execution fails, but the overall status becomes `incomplete`. The report can therefore show a supported warning without pretending the entire audit completed.
 
 **Tradeoff:** Reports need phase-aware interpretation. The alternative—discarding valid partial evidence—would make diagnosis harder.
+
+## D-009 — Instrument the kernel with hidden cells, not rewritten user code
+
+Metric wrappers must exist before the notebook imports scikit-learn functions, and the wrapper needs the original cell index at call time. The runner creates an in-memory execution notebook containing a setup cell, a small marker cell before each user code cell, and a final collector cell. These synthetic cells are removed before fingerprinting.
+
+**Tradeoff:** Execution counts inside the temporary kernel include synthetic cells. They are excluded from normalized fingerprints. In return, original source is untouched, future imports and magics keep their placement, reported cell indexes refer to the source notebook, and instrumentation output does not affect the user-output fingerprint.
+
+## D-010 — Prefer observed calls, with one explicit fallback
+
+Supported scikit-learn function calls are stronger evidence because they provide the operation, value, cell, and sample count. Some custom code produces the primary metric without calling a supported function, so the manifest may name one Python variable as a fallback. Arbitrary expressions are not evaluated.
+
+**Tradeoff:** A variable selector has weaker provenance and no reliable originating cell or sample count. Reports preserve that distinction through `capture_method` instead of presenting both sources as equivalent.
