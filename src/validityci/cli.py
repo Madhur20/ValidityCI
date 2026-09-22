@@ -6,6 +6,8 @@ import sys
 
 from validityci.audit import audit_experiment
 from validityci.reporting import write_html, write_json
+from validityci.runner import DEFAULT_RUNNER_IMAGE, DockerRunner
+from validityci.schemas import ResourceLimits
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +22,17 @@ def build_parser() -> argparse.ArgumentParser:
     audit_parser.add_argument("--config", required=True, type=Path)
     audit_parser.add_argument("--output", type=Path, default=Path("build/audit.json"))
     audit_parser.add_argument("--html", type=Path, default=Path("build/audit.html"))
+    audit_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Execute the notebook with the restricted Docker runner",
+    )
+    audit_parser.add_argument("--runner-image", default=DEFAULT_RUNNER_IMAGE)
+    audit_parser.add_argument("--timeout", type=int, default=300, metavar="SECONDS")
+    audit_parser.add_argument("--memory", type=int, default=2048, metavar="MB")
+    audit_parser.add_argument("--cpus", type=int, default=2)
+    audit_parser.add_argument("--process-limit", type=int, default=128)
+    audit_parser.add_argument("--max-output-bytes", type=int, default=1_000_000)
     return parser
 
 
@@ -28,14 +41,29 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     try:
         if args.command == "audit":
-            report = audit_experiment(args.notebook, args.data, args.config)
+            limits = ResourceLimits(
+                timeout_seconds=args.timeout,
+                memory_mb=args.memory,
+                cpu_count=args.cpus,
+                process_limit=args.process_limit,
+                max_output_bytes=args.max_output_bytes,
+            )
+            runner = DockerRunner(args.runner_image) if args.execute else None
+            report = audit_experiment(
+                args.notebook,
+                args.data,
+                args.config,
+                runner=runner,
+                limits=limits,
+            )
             write_json(report, args.output)
             write_html(report, args.html)
             print(f"Audit status: {report.status}")
             print(f"Findings: {len(report.findings)}")
+            if report.executions:
+                print(f"Execution: {report.executions[0].status}")
             print(f"JSON report: {args.output}")
             print(f"HTML report: {args.html}")
     except (OSError, ValueError) as error:
         print(f"ValidityCI error: {error}", file=sys.stderr)
         raise SystemExit(2) from error
-

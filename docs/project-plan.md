@@ -551,9 +551,9 @@ The report contract now uses schema version `1.1.0`, immutable slotted models, e
 
 The audit flow now accepts a runner interface independent of Docker. Its request fixes the execution ID, inputs, working directory, resource limits, and network policy. The result distinguishes success, cell failure, timeout, and runner errors. A deterministic fake covers orchestration and repeated-output scenarios without starting a container.
 
-### 3. Restricted container image
+### 3. Restricted container image — completed
 
-Execute the example without network access using read-only input and limited resources. Confirm no host secrets are visible.
+The Docker backend stages only declared inputs and runs as a non-root user with networking disabled, a read-only root filesystem, dropped capabilities, no privilege escalation, and CPU, memory, process, output, and wall-time limits. It captures successful fingerprints, cell failures, timeouts, and runner failures. Automated tests cover the generated security command and input staging. Live container tests confirmed successful example execution, stable output fingerprints, exact cell-error attribution, timeout cleanup, and blocking of unstaged host files, host environment variables, writes to the input mount, and external network connections.
 
 ### 4. Normalized metric artifact
 

@@ -10,13 +10,15 @@
 - Metric-suitability check
 - JSON and HTML reports
 - Automated tests and an intentionally flawed example
+- Restricted Docker runner with explicit resource and network policy
 
-## Milestone 2: reproducible notebook runner
+## Milestone 2: reproducible notebook runner — in progress
 
-- Execute supported notebooks inside a restricted container
-- Disable network access and enforce CPU, memory, process, and time limits
-- Capture environment details, cell failures, outputs, and runtime
-- Verify that a second execution reproduces the declared metric
+- Execute supported notebooks inside a restricted container — completed
+- Disable network access and enforce CPU, memory, process, and time limits — implemented
+- Capture cell failures, output fingerprints, and runtime — implemented
+- Capture a normalized environment fingerprint — pending
+- Compare two executions automatically and verify the declared metric — pending
 
 ## Milestone 3: experiment instrumentation
 
@@ -50,4 +52,3 @@
 ## Validation gate
 
 Before building a hosted SaaS, interview model reviewers at applied-ML teams or consultancies. Continue toward a commercial product only if real teams demonstrate recurring review work, provide pilot artifacts, and find that existing validation libraries do not cover the evidence and approval workflow.
-
