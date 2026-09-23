@@ -16,8 +16,8 @@ from nbclient import NotebookClient
 from nbclient.exceptions import CellExecutionError, CellTimeoutError
 
 
-SCHEMA_VERSION = "1.3.0"
-INSTRUMENTATION_SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.5.0"
+INSTRUMENTATION_SCHEMA_VERSION = "1.2.0"
 _COLLECTOR_MARKER = "__VALIDITYCI_RUNTIME_V1__"
 _SUPPORTED_METRIC_FUNCTIONS = {
     "accuracy": "accuracy_score",
@@ -38,6 +38,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-output-bytes", required=True, type=int)
     parser.add_argument("--metric-name", choices=sorted(_SUPPORTED_METRIC_FUNCTIONS))
     parser.add_argument("--metric-variable")
+    parser.add_argument("--entity-column")
     return parser
 
 
@@ -94,7 +95,7 @@ def _environment_fingerprint() -> dict[str, str]:
     }
 
 
-def _instrumentation_source() -> str:
+def _instrumentation_source(entity_column: str | None) -> str:
     metric_functions = repr(_SUPPORTED_METRIC_FUNCTIONS)
     return f"""
 import functools as __validityci_functools
@@ -115,6 +116,7 @@ __validityci_runtime_events__ = []
 __validityci_fingerprint_key__ = __validityci_secrets.token_bytes(32)
 __validityci_fingerprint_scope_id__ = "scope." + __validityci_secrets.token_hex(16)
 __validityci_metric_functions__ = {metric_functions}
+__validityci_entity_column__ = {entity_column!r}
 __validityci_safe_parameters__ = {{
     "average", "pos_label", "zero_division", "multi_class", "max_fpr"
 }}
@@ -216,6 +218,63 @@ def __validityci_record_event(event_type, operation, inputs, outputs, parameters
         "parameters": parameters or {{}},
     }})
 
+def __validityci_entity_overlap(split_inputs, split_outputs):
+    if not __validityci_entity_column__:
+        return {{"status": "not_applicable"}}
+    try:
+        entity_input_index = None
+        for index, value in enumerate(split_inputs):
+            if (
+                isinstance(value, __validityci_pandas.DataFrame)
+                and __validityci_entity_column__ in value.columns
+            ):
+                entity_input_index = index
+                break
+            if (
+                isinstance(value, __validityci_pandas.Series)
+                and value.name == __validityci_entity_column__
+            ):
+                entity_input_index = index
+                break
+        if entity_input_index is None:
+            return {{
+                "status": "unsupported",
+                "reason": "The configured entity column was not passed to train_test_split",
+            }}
+        train_entities = split_outputs[entity_input_index * 2]
+        test_entities = split_outputs[entity_input_index * 2 + 1]
+        if isinstance(train_entities, __validityci_pandas.DataFrame):
+            train_entities = train_entities[__validityci_entity_column__]
+            test_entities = test_entities[__validityci_entity_column__]
+        train_entities = __validityci_pandas.Series(train_entities).dropna()
+        test_entities = __validityci_pandas.Series(test_entities).dropna()
+        train_hashes = set(
+            __validityci_pandas.util.hash_pandas_object(
+                train_entities, index=False, categorize=True
+            ).astype("uint64").tolist()
+        )
+        test_hashes = set(
+            __validityci_pandas.util.hash_pandas_object(
+                test_entities, index=False, categorize=True
+            ).astype("uint64").tolist()
+        )
+        overlap_count = len(train_hashes & test_hashes)
+        test_unique_count = len(test_hashes)
+        return {{
+            "status": "measured",
+            "train_unique_count": len(train_hashes),
+            "test_unique_count": test_unique_count,
+            "overlap_count": overlap_count,
+            "test_overlap_rate": (
+                overlap_count / test_unique_count if test_unique_count else 0.0
+            ),
+        }}
+    except Exception as error:
+        return {{
+            "status": "error",
+            "reason": "Entity overlap measurement failed: " + type(error).__name__,
+        }}
+
 def __validityci_wrap_metric(__validityci_metric_name, __validityci_original):
     @__validityci_functools.wraps(__validityci_original)
     def __validityci_wrapped(*args, **kwargs):
@@ -267,6 +326,7 @@ def __validityci_train_test_split(*args, **kwargs):
         if key in {{"test_size", "train_size", "shuffle", "random_state"}}
         and (value is None or isinstance(value, (str, bool, int, float)))
     }}
+    safe_parameters["entity_overlap"] = __validityci_entity_overlap(args, result)
     __validityci_record_event(
         "split", "sklearn.model_selection.train_test_split", args, result,
         safe_parameters,
@@ -287,7 +347,15 @@ def __validityci_estimator_getattribute(self, name):
         event_type = "transform" if name in {{"fit_transform", "transform"}} else name
         operation = type(self).__module__ + "." + type(self).__qualname__ + "." + name
         outputs = () if name == "fit" else (result,)
-        __validityci_record_event(event_type, operation, args, outputs)
+        try:
+            transform_method = __validityci_original_getattribute__(self, "transform")
+            object_kind = "transformer" if callable(transform_method) else "estimator"
+        except Exception:
+            object_kind = "estimator"
+        __validityci_record_event(
+            event_type, operation, args, outputs,
+            {{"object_kind": object_kind}},
+        )
         return result
     __validityci_method.__validityci_wrapped__ = True
     return __validityci_method
@@ -350,10 +418,15 @@ print({_COLLECTOR_MARKER!r} + __validityci_json.dumps(__validityci_payload__, so
 
 
 def _prepare_notebook(
-    notebook: Any, metric_name: str | None, variable_name: str | None
+    notebook: Any,
+    metric_name: str | None,
+    variable_name: str | None,
+    entity_column: str | None,
 ) -> list[Any]:
     original_cells = list(notebook.cells)
-    execution_cells = [nbformat.v4.new_code_cell(_instrumentation_source())]
+    execution_cells = [
+        nbformat.v4.new_code_cell(_instrumentation_source(entity_column))
+    ]
     for index, cell in enumerate(original_cells):
         if cell.get("cell_type") == "code":
             execution_cells.append(
@@ -452,7 +525,7 @@ def main() -> None:
     try:
         notebook = nbformat.read(args.notebook, as_version=4)
         original_cells = _prepare_notebook(
-            notebook, args.metric_name, args.metric_variable
+            notebook, args.metric_name, args.metric_variable, args.entity_column
         )
         client = NotebookClient(
             notebook,

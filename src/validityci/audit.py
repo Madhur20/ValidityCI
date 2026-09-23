@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from validityci.checks.entity_overlap import run_entity_overlap_check
 from validityci.checks.metric_suitability import run_metric_suitability_check
+from validityci.checks.preprocessing_order import run_preprocessing_order_check
 from validityci.dataset import profile_csv
 from validityci.reproducibility import compare_executions
 from validityci.runner.protocol import Runner
 from validityci.schemas import (
     AuditReport,
     AuditStatus,
+    CheckStatus,
     Confidence,
     Evidence,
     ExecutionRequest,
@@ -56,6 +59,7 @@ def audit_experiment(
                         metric_name=config.primary_metric,
                         variable_name=config.primary_metric_variable,
                     ),
+                    entity_column=config.entity_column,
                     limits=limits or ResourceLimits(),
                     network_enabled=False,
                 )
@@ -72,6 +76,17 @@ def audit_experiment(
         dataset=dataset,
         metric_cells=metric_cells,
     )
+    checks = ()
+    if executions:
+        entity_check, entity_evidence, entity_findings = run_entity_overlap_check(
+            config, executions
+        )
+        preprocessing_check, preprocessing_evidence, preprocessing_findings = (
+            run_preprocessing_order_check(executions)
+        )
+        checks = (entity_check, preprocessing_check)
+        evidence = (*evidence, *entity_evidence, *preprocessing_evidence)
+        findings = (*findings, *entity_findings, *preprocessing_findings)
     reproducibility = None
     if len(executions) == 2:
         reproducibility = compare_executions(
@@ -129,7 +144,16 @@ def audit_experiment(
         reproducibility is not None
         and reproducibility.status is ReproducibilityStatus.INCOMPLETE
     )
-    if execution_failed or metric_capture_incomplete or comparison_incomplete:
+    check_incomplete = any(
+        check.status in {CheckStatus.UNSUPPORTED, CheckStatus.ERROR}
+        for check in checks
+    )
+    if (
+        execution_failed
+        or metric_capture_incomplete
+        or comparison_incomplete
+        or check_incomplete
+    ):
         status = AuditStatus.INCOMPLETE
     elif findings:
         status = AuditStatus.ATTENTION_REQUIRED
@@ -142,6 +166,7 @@ def audit_experiment(
         dataset=dataset,
         evidence=evidence,
         findings=findings,
+        checks=checks,
         executions=executions,
         reproducibility=reproducibility,
     )

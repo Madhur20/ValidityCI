@@ -21,6 +21,10 @@ from validityci.schemas import (
     MetricCaptureStatus,
     ReproducibilityComparison,
     ReproducibilityStatus,
+    RuntimeDataFingerprint,
+    RuntimeEvent,
+    RuntimeEventType,
+    RuntimeTrace,
 )
 
 
@@ -128,6 +132,7 @@ class ReproducibilityComparisonTests(unittest.TestCase):
                 for index, value in enumerate(values, start=1)
             ),
             environment=cls._environment() if environment else None,
+            runtime_trace=cls._clean_entity_trace(),
         )
 
     @staticmethod
@@ -140,6 +145,38 @@ class ReproducibilityComparisonTests(unittest.TestCase):
             machine="aarch64",
             packages_fingerprint="sha256:packages",
             runner_fingerprint="sha256:runner",
+        )
+
+    @staticmethod
+    def _clean_entity_trace() -> RuntimeTrace:
+        data = RuntimeDataFingerprint(
+            role="input.0",
+            fingerprint="hmac-sha256:data",
+            data_type="dataframe",
+            row_count=20,
+            column_count=3,
+        )
+        return RuntimeTrace(
+            fingerprint_scope_id="scope.test",
+            events=(
+                RuntimeEvent(
+                    id="runtime.1",
+                    sequence=1,
+                    event_type=RuntimeEventType.SPLIT,
+                    operation="sklearn.model_selection.train_test_split",
+                    cell_index=1,
+                    inputs=(data,),
+                    parameters={
+                        "entity_overlap": {
+                            "status": "measured",
+                            "train_unique_count": 15,
+                            "test_unique_count": 5,
+                            "overlap_count": 0,
+                            "test_overlap_rate": 0.0,
+                        }
+                    },
+                ),
+            ),
         )
 
 

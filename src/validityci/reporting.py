@@ -158,6 +158,20 @@ def write_html(report: AuditReport, path: str | Path) -> None:
             f"{reason_list}</section>"
         )
 
+    checks_section = ""
+    if report.checks:
+        check_items = "".join(
+            "<li>"
+            f"<strong>{escape(check.status.value.upper())}</strong> · "
+            f"<code>{escape(check.check_id)}</code><br>"
+            f"{escape(check.summary)}"
+            "</li>"
+            for check in report.checks
+        )
+        checks_section = (
+            f"<section><h2>Deterministic checks</h2><ul>{check_items}</ul></section>"
+        )
+
     html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -182,6 +196,7 @@ def write_html(report: AuditReport, path: str | Path) -> None:
   </header>
   {execution_section}
   {reproducibility_section}
+  {checks_section}
   {''.join(finding_sections)}
 </body>
 </html>

@@ -11,6 +11,8 @@ This repository contains a static audit and an opt-in restricted notebook runner
 - Local CSV data
 - Binary classification
 - Metric-suitability check
+- Runtime entity-overlap check for supported splits
+- Runtime preprocessing-fit-scope check for supported transformers
 - Local execution with no paid services or model API
 - Optional execution in a restricted Docker container
 
@@ -40,13 +42,13 @@ The example intentionally declares `accuracy` as its primary metric for an imbal
 Build the pinned runner environment once:
 
 ```bash
-docker build -f docker/runner/Dockerfile -t validityci-runner:0.3.0 .
+docker build -f docker/runner/Dockerfile -t validityci-runner:0.4.1 .
 ```
 
 Then opt in to execution:
 
 ```bash
-PYTHONPATH=src python3 -m validityci audit examples/imbalanced_churn.ipynb \
+PYTHONPATH=src python3 -m validityci audit examples/runtime_instrumentation.ipynb \
   --data examples/customer_churn.csv \
   --config examples/validityci.toml \
   --execute \
@@ -64,7 +66,11 @@ For supported scikit-learn metrics, an execution record includes the metric name
 
 Each successful run also records an aggregate environment fingerprint derived from the Python runtime, operating system, machine architecture, runner code, and installed package names and versions. Reports preserve the three comparison signals separately: equal metrics do not hide changed notebook outputs, and equal outputs do not hide an environment change.
 
-The `0.3.0` runner adds a separately versioned runtime trace for supported scikit-learn train/test splits, estimator and transformer fitting, transformations, predictions, and metric calls. Every event points to the original notebook cell and includes only operation metadata, shapes, and run-scoped HMAC fingerprints. Raw data values and the fingerprint key are never written to the execution result.
+The `0.4.1` runner includes a separately versioned runtime trace for supported scikit-learn train/test splits, estimator and transformer fitting, transformations, predictions, and metric calls. Every event points to the original notebook cell and includes only operation metadata, shapes, object classification, and run-scoped HMAC fingerprints. Raw data values and the fingerprint key are never written to the execution result.
+
+When `entity_column` is configured and that column or named series is passed to `train_test_split`, the runner computes aggregate train/test entity overlap inside the kernel. A confirmed overlap produces a blocking, high-confidence finding; reports contain only unique counts, overlap count, and overlap rate—not entity values or entity-level hashes.
+
+The preprocessing-fit-scope check compares supported transformer fits with earlier split lineage. Fitting before a split, on the full pre-split dataset, or on the held-out test partition produces a blocking, high-confidence finding; ambiguous or missing lineage is reported as `review` or `unsupported`, never silently passed.
 
 ## Run the tests
 

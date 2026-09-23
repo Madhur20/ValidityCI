@@ -1,6 +1,6 @@
 # Current state
 
-Last reviewed: 2026-09-22
+Last reviewed: 2026-09-23
 
 ## Product boundary
 
@@ -9,7 +9,7 @@ ValidityCI is an independent, local-first validation gate for notebook-based tab
 ## Implemented
 
 - Dependency-free CLI, TOML manifest loading, notebook inspection, CSV profiling, JSON reports, and HTML reports.
-- One deterministic validity check: accuracy suitability for an imbalanced binary target.
+- Deterministic checks for accuracy suitability on an imbalanced target, configured entity overlap, and preprocessing fit scope across supported splits.
 - Runner protocol plus deterministic fake runner for fast orchestration tests.
 - Restricted Docker execution with declared-input staging, network denial, non-root execution, read-only root/input, and CPU, memory, process, output, cell, and wall-time limits.
 - Structured cell failures, timeouts, runner failures, normalized user-output fingerprints, and cleanup of timed-out containers.
@@ -17,15 +17,15 @@ ValidityCI is an independent, local-first validation gate for notebook-based tab
 - Two fresh executions by default, environment fingerprints, and separate metric/output/environment comparisons.
 - Versioned runtime events for supported split, fit, transform, predict, and metric calls with original cell attribution.
 - Run-scoped HMAC data lineage containing types and shapes but no serialized row values or retained key.
-- Forty-two dependency-free unit tests plus successful live Docker smoke tests of the example and full runtime benchmark.
+- Sixty-one dependency-free unit tests plus live Docker verification of clean and intentionally flawed entity and preprocessing cases.
 
 ## Versions
 
 - Package version: `0.1.0` (packaging has not yet been aligned with runner milestones).
-- Default runner image: `validityci-runner:0.3.0`.
-- Audit report schema: `1.4.0`.
-- Execution request/result schema: `1.3.0`.
-- Runtime instrumentation schema: `1.0.0`.
+- Default runner image: `validityci-runner:0.4.1`.
+- Audit report schema: `1.5.0`.
+- Execution request/result schema: `1.5.0`.
+- Runtime instrumentation schema: `1.2.0`.
 
 Schema constants in `src/validityci/schemas/__init__.py` and `docker/runner/execute_notebook.py` are authoritative if this document becomes stale.
 
@@ -34,6 +34,7 @@ Schema constants in `src/validityci/schemas/__init__.py` and `docker/runner/exec
 - One notebook, one local CSV, binary classification, Python, pandas, NumPy, and scikit-learn.
 - Fixed runner dependencies; no arbitrary installation, services, databases, GPUs, distributed execution, or network access.
 - Runtime lineage covers `train_test_split` and methods inherited through scikit-learn `BaseEstimator`; custom and third-party operations are not observed.
+- Entity overlap requires the configured entity DataFrame column or named Series to be passed to the supported split; otherwise the check is explicitly unsupported.
 - Metric wrappers cover six named functions. Estimator `.score`, aliases imported before setup, custom functions, and third-party metrics need adapters or the manifest fallback.
 - `fit_transform` produces nested fit, transform, and enclosing fit-transform completion events.
 - HMAC fingerprints are comparable only inside one execution; repeated runs compare event structure, metrics, outputs, and environments.
@@ -43,11 +44,10 @@ Schema constants in `src/validityci/schemas/__init__.py` and `docker/runner/exec
 
 ## Next technical work
 
-The next milestone is deterministic checks built on runtime lineage:
+The next deterministic-check work is:
 
-1. Entity overlap between configured training and test partitions.
-2. Preprocessing fitted before a split or on evaluation data.
-3. Expanded metric evidence such as confusion-matrix values.
-4. Severity/confidence policy refinement and permanent regression benchmarks.
+1. Expanded metric evidence such as confusion-matrix values.
+2. Severity/confidence policy refinement and broader permanent regression benchmarks.
+3. Multiple-split/cross-validation lineage policies and adapter coverage.
 
 Do not add an AI investigator before deterministic checks and an investigator evaluation benchmark exist.

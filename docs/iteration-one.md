@@ -33,10 +33,11 @@ Custom split functions, non-scikit-learn estimators, estimator `score`, and thir
 
 ## Milestone 4: deterministic validity checks
 
-- Detect entity overlap across train and test partitions
-- Detect preprocessing fitted before a split
+- Detect entity overlap across train and test partitions — initial supported implementation completed
+- Detect preprocessing fitted before a split or on evaluation data — initial supported implementation completed
 - Expand metric checks with confusion-matrix evidence
-- Add severity and confidence policies
+- Add explicit check statuses — implemented
+- Expand severity and confidence policies
 
 ## Milestone 5: independent counterfactual
 

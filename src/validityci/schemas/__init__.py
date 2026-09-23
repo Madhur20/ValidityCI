@@ -12,9 +12,9 @@ from typing import Any, TypeAlias, cast
 import tomllib
 
 
-REPORT_SCHEMA_VERSION = "1.4.0"
-EXECUTION_SCHEMA_VERSION = "1.3.0"
-INSTRUMENTATION_SCHEMA_VERSION = "1.0.0"
+REPORT_SCHEMA_VERSION = "1.5.0"
+EXECUTION_SCHEMA_VERSION = "1.5.0"
+INSTRUMENTATION_SCHEMA_VERSION = "1.2.0"
 SUPPORTED_TASKS = frozenset({"binary_classification"})
 SUPPORTED_METRICS = frozenset(
     {"accuracy", "balanced_accuracy", "f1", "precision", "recall", "roc_auc"}
@@ -61,6 +61,15 @@ class RuntimeEventType(StrEnum):
     TRANSFORM = "transform"
     PREDICT = "predict"
     METRIC = "metric"
+
+
+class CheckStatus(StrEnum):
+    PASS = "pass"
+    FAIL = "fail"
+    REVIEW = "review"
+    NOT_APPLICABLE = "not_applicable"
+    UNSUPPORTED = "unsupported"
+    ERROR = "error"
 
 
 class Severity(StrEnum):
@@ -280,6 +289,57 @@ class DatasetProfile:
             "target_column": self.target_column,
             "class_counts": dict(self.class_counts),
             "minority_fraction": self.minority_fraction,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CheckResult:
+    check_id: str
+    status: CheckStatus
+    summary: str
+    evidence_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_identifier("check_id", self.check_id)
+        object.__setattr__(
+            self, "status", _enum_value(CheckStatus, self.status, "check status")
+        )
+        _require_non_empty("check result summary", self.summary)
+        object.__setattr__(self, "evidence_ids", tuple(self.evidence_ids))
+        _require_unique(list(self.evidence_ids), "check evidence references")
+        for evidence_id in self.evidence_ids:
+            _require_identifier("check evidence reference", evidence_id)
+        if self.status in {CheckStatus.PASS, CheckStatus.FAIL, CheckStatus.REVIEW}:
+            if not self.evidence_ids:
+                raise ValueError(
+                    f"Check status {self.status.value!r} requires evidence"
+                )
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "CheckResult":
+        _reject_unknown(
+            raw,
+            {"check_id", "status", "summary", "evidence_ids"},
+            "check result",
+        )
+        return cls(
+            check_id=_string(raw, "check_id"),
+            status=_enum_value(
+                CheckStatus, _string(raw, "status"), "check status"
+            ),
+            summary=_string(raw, "summary"),
+            evidence_ids=tuple(
+                _string_value(item, "check evidence reference")
+                for item in _sequence(raw, "evidence_ids", default=())
+            ),
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "check_id": self.check_id,
+            "status": self.status.value,
+            "summary": self.summary,
+            "evidence_ids": list(self.evidence_ids),
         }
 
 
@@ -771,6 +831,7 @@ class ExecutionRequest:
     data_paths: tuple[str, ...]
     working_directory: str
     metric_selector: MetricSelector | None = None
+    entity_column: str | None = None
     limits: ResourceLimits = field(default_factory=ResourceLimits)
     network_enabled: bool = False
     schema_version: str = EXECUTION_SCHEMA_VERSION
@@ -796,6 +857,8 @@ class ExecutionRequest:
             self.metric_selector, MetricSelector
         ):
             raise TypeError("metric_selector must be MetricSelector")
+        if self.entity_column is not None:
+            _require_non_empty("entity_column", self.entity_column)
         if not isinstance(self.network_enabled, bool):
             raise TypeError("network_enabled must be a boolean")
 
@@ -810,6 +873,7 @@ class ExecutionRequest:
                 "data_paths",
                 "working_directory",
                 "metric_selector",
+                "entity_column",
                 "limits",
                 "network_enabled",
             },
@@ -835,6 +899,7 @@ class ExecutionRequest:
                     _mapping(metric_selector, "metric selector")
                 )
             ),
+            entity_column=_optional_string(raw.get("entity_column")),
             limits=ResourceLimits.from_dict(
                 _mapping(_required(raw, "limits"), "resource limits")
             ),
@@ -851,6 +916,7 @@ class ExecutionRequest:
             "metric_selector": (
                 None if self.metric_selector is None else self.metric_selector.to_dict()
             ),
+            "entity_column": self.entity_column,
             "limits": self.limits.to_dict(),
             "network_enabled": self.network_enabled,
         }
@@ -1208,6 +1274,7 @@ class AuditReport:
     dataset: DatasetProfile
     evidence: tuple[Evidence, ...]
     findings: tuple[Finding, ...]
+    checks: tuple[CheckResult, ...] = ()
     executions: tuple[ExecutionResult, ...] = ()
     reproducibility: ReproducibilityComparison | None = None
     schema_version: str = REPORT_SCHEMA_VERSION
@@ -1223,9 +1290,11 @@ class AuditReport:
     def validate(self) -> None:
         evidence_ids = [item.id for item in self.evidence]
         finding_ids = [item.id for item in self.findings]
+        check_ids = [item.check_id for item in self.checks]
         execution_ids = [item.execution_id for item in self.executions]
         _require_unique(evidence_ids, "evidence IDs")
         _require_unique(finding_ids, "finding IDs")
+        _require_unique(check_ids, "check IDs")
         _require_unique(execution_ids, "execution IDs")
         if self.reproducibility is not None:
             if not isinstance(self.reproducibility, ReproducibilityComparison):
@@ -1240,10 +1309,32 @@ class AuditReport:
                 )
         known = set(evidence_ids)
         missing = sorted(
-            {reference for finding in self.findings for reference in finding.evidence_ids if reference not in known}
+            {
+                reference
+                for references in (
+                    *(finding.evidence_ids for finding in self.findings),
+                    *(check.evidence_ids for check in self.checks),
+                )
+                for reference in references
+                if reference not in known
+            }
         )
         if missing:
-            raise ValueError(f"Findings reference missing evidence: {', '.join(missing)}")
+            raise ValueError(
+                f"Findings or checks reference missing evidence: {', '.join(missing)}"
+            )
+        finding_check_ids = {finding.check_id for finding in self.findings}
+        missing_findings = sorted(
+            check.check_id
+            for check in self.checks
+            if check.status in {CheckStatus.FAIL, CheckStatus.REVIEW}
+            and check.check_id not in finding_check_ids
+        )
+        if missing_findings:
+            raise ValueError(
+                "Failed or review checks require findings: "
+                + ", ".join(missing_findings)
+            )
         if self.dataset.target_column != self.config.target_column:
             raise ValueError("Dataset target_column does not match experiment configuration")
         execution_failed = any(
@@ -1265,15 +1356,29 @@ class AuditReport:
             self.reproducibility is not None
             and self.reproducibility.status is ReproducibilityStatus.DIVERGED
         )
+        check_incomplete = any(
+            check.status in {CheckStatus.UNSUPPORTED, CheckStatus.ERROR}
+            for check in self.checks
+        )
         audit_incomplete = (
-            execution_failed or metric_capture_incomplete or comparison_incomplete
+            execution_failed
+            or metric_capture_incomplete
+            or comparison_incomplete
+            or check_incomplete
         )
         if audit_incomplete and self.status is not AuditStatus.INCOMPLETE:
             raise ValueError(
-                "Reports with unsuccessful execution or unsupported primary metric "
-                "must use status 'incomplete'"
+                "Reports with unsuccessful execution, unsupported evidence, or "
+                "check errors must use status 'incomplete'"
             )
-        attention_required = bool(self.findings) or comparison_diverged
+        attention_required = (
+            bool(self.findings)
+            or comparison_diverged
+            or any(
+                check.status in {CheckStatus.FAIL, CheckStatus.REVIEW}
+                for check in self.checks
+            )
+        )
         if not audit_incomplete and attention_required and self.status is not AuditStatus.ATTENTION_REQUIRED:
             raise ValueError("Reports with findings must use status 'attention_required'")
         if (
@@ -1295,6 +1400,7 @@ class AuditReport:
                 "dataset",
                 "evidence",
                 "findings",
+                "checks",
                 "executions",
                 "reproducibility",
             },
@@ -1309,6 +1415,10 @@ class AuditReport:
             dataset=DatasetProfile.from_dict(_mapping(_required(raw, "dataset"), "dataset")),
             evidence=tuple(Evidence.from_dict(_mapping(item, "evidence")) for item in _sequence(raw, "evidence")),
             findings=tuple(Finding.from_dict(_mapping(item, "finding")) for item in _sequence(raw, "findings")),
+            checks=tuple(
+                CheckResult.from_dict(_mapping(item, "check result"))
+                for item in _sequence(raw, "checks", default=())
+            ),
             executions=tuple(
                 ExecutionResult.from_dict(_mapping(item, "execution result"))
                 for item in _sequence(raw, "executions")
@@ -1331,6 +1441,7 @@ class AuditReport:
             "dataset": self.dataset.to_dict(),
             "evidence": [item.to_dict() for item in self.evidence],
             "findings": [item.to_dict() for item in self.findings],
+            "checks": [item.to_dict() for item in self.checks],
             "executions": [item.to_dict() for item in self.executions],
             "reproducibility": (
                 None
@@ -1519,6 +1630,8 @@ __all__ = [
     "REPORT_SCHEMA_VERSION",
     "AuditReport",
     "AuditStatus",
+    "CheckResult",
+    "CheckStatus",
     "Confidence",
     "DatasetProfile",
     "Evidence",

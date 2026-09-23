@@ -175,3 +175,23 @@ Scikit-learn's `fit_transform` commonly calls `fit` and `transform` internally. 
 **Verification:** The runtime benchmark produced eight ordered events covering split, scaler fit, scaler transform, scaler fit-transform, test transform, estimator fit, prediction, and metric evaluation. All events pointed to the original notebook cell, and the metric remained `1.0`.
 
 **Lesson:** Event ordering currently describes operation completion, not call entry. Downstream checks must use event type, operation, cell, and fingerprint lineage together instead of assuming every adjacent event is a separate user-authored statement.
+
+## H-017 — Row-level fingerprints cannot prove entity isolation
+
+**Type:** Design decision verified in live tests
+
+Whole-frame fingerprints can connect operation inputs and outputs, but they cannot establish whether repeated business entities crossed a row split. Exporting per-entity hashes would enable the check but would also create a sensitive identifier inventory in the report.
+
+The runner now receives the declared entity column, measures set overlap inside the kernel when that entity data is passed to `train_test_split`, and returns only aggregate counts. The clean benchmark reported zero overlaps across 15 training and 5 test entities. The seeded flawed benchmark reported two overlaps, representing 50% of test entities, and produced a blocking high-confidence finding.
+
+**Lesson:** Privacy-preserving validation often requires moving the computation to the data rather than moving pseudonymous records into the report. When the required lineage is absent, explicit `unsupported` is safer than inference.
+
+## H-018 — Reproducible leakage remains invalid
+
+**Type:** Design decision verified in live tests
+
+The intentionally flawed preprocessing benchmark fits `StandardScaler` on the complete feature matrix before calling `train_test_split`. It executed twice with matching metrics, outputs, and environments, so reproducibility alone correctly reported `reproduced`.
+
+The preprocessing check independently classified both the nested scaler `fit` and enclosing `fit_transform` as occurring before the split in both runs. It produced one blocking, high-confidence finding. The clean benchmark fitted the same transformer only on the captured training output and passed. Serialized reports contained operation metadata and run-scoped fingerprints, but no raw data, data-value field, or fingerprint key.
+
+**Lesson:** Stability and validity are independent properties. Runtime lineage can prove a narrow leakage condition without retaining the underlying records, while duplicate nested events should be summarized into one reviewer finding.

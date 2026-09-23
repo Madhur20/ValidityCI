@@ -2,7 +2,7 @@
 
 ## Thirty-second explanation
 
-ValidityCI is an independent validation gate for machine-learning experiments. Instead of reviewing whether notebook code looks reasonable, it executes a declared experiment twice in fresh restricted environments and builds evidence about what actually happened. The current system compares normalized metrics, notebook outputs, and environment fingerprints; it also captures versioned, privacy-minimized lineage events for supported split, preprocessing, fit, prediction, and metric operations. The next work is using that lineage for deterministic overlap and preprocessing-order checks.
+ValidityCI is an independent validation gate for machine-learning experiments. Instead of reviewing whether notebook code looks reasonable, it executes a declared experiment twice in fresh restricted environments and builds evidence about what actually happened. The current system compares normalized metrics, notebook outputs, and environment fingerprints; it captures versioned, privacy-minimized lineage events and can block configured entity overlap or supported preprocessing fitted before splitting or on evaluation data. The next work is richer metric evidence and policy refinement.
 
 ## Why this is not another AI code reviewer
 
@@ -16,10 +16,12 @@ The important failures in ML experiments are often methodological rather than sy
 4. A real smoke test found that `nbclient` alone did not provide a Python kernel; adding `ipykernel` fixed the end-to-end runtime.
 5. Adversarial notebooks verified that host files, environment variables, writes to input, and external networking were unavailable.
 6. Failures remain first-class results: cell errors identify the cell and cause, timeouts remove the workload, and unavailable infrastructure produces `incomplete` rather than a false pass.
-7. Normalized metrics now make a stronger comparison possible, but the project does not claim automated metric reproducibility until the two-run comparison is implemented.
+7. Normalized metrics feed a two-run comparison that preserves metric, output, and environment signals separately.
 8. Metric instrumentation uses hidden execution cells so user source remains unchanged; unsupported capture remains separate from failed execution.
 9. Reproducibility keeps metric, output, and environment signals separate, and divergence becomes a normal evidence-backed finding.
 10. Runtime traces use a separate schema and run-scoped HMAC fingerprints, so downstream checks can follow data flow without storing rows or exporting the key.
+11. Entity overlap is computed beside the data inside the temporary kernel; only counts and rates enter the evidence report.
+12. Transformer fit scope is classified from same-run split lineage; confirmed pre-split/full/test fitting is blocking, while ambiguity remains review or unsupported.
 
 ## Useful deep-dive questions
 
@@ -54,9 +56,10 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 ## Honest current limitations
 
 - The supported execution environment is intentionally limited to Python, pandas, and scikit-learn.
-- There is one deterministic validity check today: metric suitability for imbalanced binary classification.
+- Deterministic checks currently cover metric suitability for imbalanced binary classification, entity overlap, and preprocessing fit scope for supported splits.
 - Runtime capture currently covers six scikit-learn metric functions; estimator `.score`, custom functions, and third-party metric libraries need explicit support or the manifest fallback.
 - Runtime lineage covers scikit-learn `train_test_split` and `BaseEstimator` fit/transform/predict methods. Custom and third-party operations are outside the initial adapter and cannot yet be detected as observed-but-unsupported calls.
+- Entity overlap is supported only when the configured entity column or named series is explicitly passed through `train_test_split`; otherwise the check is `unsupported` rather than inferred.
 - Output comparison detects a changed normalized output but does not yet localize the first differing cell or value.
 - Dependency locking and environment fingerprinting are not complete.
 - Docker reduces exposure but is not sufficient isolation for arbitrary hostile multi-tenant workloads.
@@ -71,7 +74,7 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 5. Show the normalized `accuracy = 0.9` artifact, its original cell, and its 20-sample count.
 6. Show a seeded stable run marked `reproduced` across metric, output, and environment.
 7. Show an unseeded run with its metric delta and reproducibility finding.
-8. Show the runtime benchmark's ordered split, transform, fit, predict, and metric events, then end with the next milestone: entity-overlap and preprocessing-order checks built from that lineage.
+8. Show the runtime benchmark's ordered events and clean entity/preprocessing results, then the entity-overlap and pre-split preprocessing benchmarks with their blocking findings. End with the next milestone: confusion-matrix evidence and severity-policy refinement.
 
 ## Claims to avoid
 

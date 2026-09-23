@@ -82,7 +82,7 @@ The first comparison is encouraging but narrow: the example retained the same ou
 
 To prove entity overlap or preprocessing order, the system needs to know which rows or partitions flowed into an operation without storing sensitive row values.
 
-Current response: supported runtime events use run-scoped HMAC fingerprints. The secret key exists only inside the temporary kernel, so equal data can be linked within one execution without creating a cross-run identifier. This reduces offline guessing risk but intentionally prevents direct fingerprint comparison between repeated executions. Entity-overlap checks and any future stable customer-controlled scope still need an explicit threat model.
+Current response: supported runtime events use run-scoped HMAC fingerprints. The secret key exists only inside the temporary kernel, so equal data can be linked within one execution without creating a cross-run identifier. Entity overlap is computed separately inside the kernel when the declared entity data participates in a supported split; only aggregate counts leave the kernel. Transformer-fit inputs are compared with same-run split lineage to identify pre-split, full-data, test-data, or train-only fitting. This reduces offline guessing risk but intentionally prevents direct fingerprint comparison between repeated executions. Any future stable customer-controlled scope still needs an explicit threat model.
 
 ### A metric value lacks meaning without context
 

@@ -55,6 +55,8 @@ Each component below is described in one or two lines, with its primary implemen
 | Notebook inspector | Parses notebook JSON into indexed immutable cells and locates cells containing terms relevant to static checks. | `src/validityci/notebook.py` |
 | Dataset profiler | Reads the declared CSV without third-party dependencies and computes row count, columns, target counts, and class proportions. | `src/validityci/dataset.py` |
 | Metric-suitability check | Warns when accuracy is declared for a sufficiently imbalanced binary target and links the finding to data evidence and notebook cells. | `src/validityci/checks/metric_suitability.py` |
+| Entity-overlap check | Consumes aggregate split instrumentation and blocks when configured entities appear in both train and test partitions; unsupported lineage remains explicit. | `src/validityci/checks/entity_overlap.py` |
+| Preprocessing-order check | Correlates transformer-fit inputs with split lineage and blocks fitting before the split or on full/test data; ambiguous lineage requires review. | `src/validityci/checks/preprocessing_order.py` |
 | Runner protocol | Defines the small request/result boundary used by audit orchestration, independent of any execution backend. | `src/validityci/runner/protocol.py` |
 | Fake runner | Returns preconfigured immutable results for fast orchestration and failure tests without requiring Docker. | `src/validityci/runner/fake.py` |
 | Docker runner | Stages only declared inputs, applies isolation/resource flags, starts the pinned image, bounds results, and converts launch problems into structured failures. | `src/validityci/runner/docker.py` |
@@ -80,6 +82,8 @@ Each component below is described in one or two lines, with its primary implemen
 
 Infrastructure failure is never presented as an invalid experiment, and unsupported behavior is never converted into a pass.
 
+Individual deterministic checks separately use `pass`, `fail`, `review`, `not_applicable`, `unsupported`, and `error`. An unsupported or errored requested runtime check makes the overall audit incomplete.
+
 ## Execution and privacy boundary
 
 - Docker execution is opt-in; ValidityCI never silently falls back to running notebook code on the host.
@@ -94,6 +98,8 @@ Infrastructure failure is never presented as an invalid experiment, and unsuppor
 - `train_test_split`, scikit-learn estimator/transformer `fit`, `fit_transform`, `transform`, and `predict` events.
 - `accuracy`, `balanced_accuracy`, `f1`, `precision`, `recall`, and `roc_auc` metric wrappers.
 - Static metric suitability, repeated execution comparison, JSON reporting, and HTML reporting.
+- Aggregate entity-overlap detection when the configured entity column participates in a supported split.
+- Preprocessing fit-scope detection for supported scikit-learn transformers and `train_test_split` lineage.
 
 Custom split functions, non-scikit-learn estimators, estimator `.score`, hand-written metrics, third-party metric libraries, distributed training, databases, and arbitrary dependency installation remain outside the initial support boundary.
 
@@ -112,7 +118,7 @@ PYTHONPATH=src python3 -m validityci audit examples/imbalanced_churn.ipynb \
 Build and use the restricted runner:
 
 ```bash
-docker build -f docker/runner/Dockerfile -t validityci-runner:0.3.0 .
+docker build -f docker/runner/Dockerfile -t validityci-runner:0.4.1 .
 PYTHONPATH=src python3 -m validityci audit examples/runtime_instrumentation.ipynb \
   --data examples/customer_churn.csv \
   --config examples/validityci.toml \

@@ -89,3 +89,15 @@ Split, fit, transform, predict, and metric events form a contract that will evol
 The runner generates a fresh 256-bit key inside each notebook kernel and uses HMAC-SHA-256 over canonical type, shape, dtype, index, and value hashes. The key is never emitted. Fingerprints can therefore connect a split output to a later transformer or estimator input within one execution without storing rows or creating a stable cross-run identifier.
 
 **Tradeoff:** Runtime data fingerprints cannot be directly compared between repeated executions. That deliberately gives up cross-run correlation to reduce dictionary attacks against low-cardinality data. Reproducibility continues to compare metrics, normalized outputs, and environments; a future reviewed policy may introduce a stable customer-controlled scope when cross-run lineage is required.
+
+## D-016 — Compute entity overlap inside the kernel and export only aggregates
+
+The configured entity column is passed to the runner as policy context. When the column or a named entity series participates in `train_test_split`, instrumentation computes train/test unique counts and their intersection inside the temporary kernel. Only counts and the test-overlap rate enter the trace; entity values and entity-level hashes do not.
+
+**Tradeoff:** ValidityCI cannot measure overlap when a notebook drops the entity before splitting or uses an unsupported splitter. That case is reported as `unsupported` and makes the requested audit incomplete instead of guessing from row fingerprints or silently passing.
+
+## D-017 — Classify preprocessing scope from completed runtime lineage
+
+Supported scikit-learn method events now identify whether the object is a transformer or estimator. The check examines transformer `fit` and `fit_transform` completion events, then compares their input fingerprints with earlier `train_test_split` inputs and train/test outputs. A fit before the split, on the full input, or on the test output is blocking; unmatched lineage requires review.
+
+**Tradeoff:** Completion ordering and fingerprint equality provide strong evidence for the pinned adapter but do not model arbitrary pipelines, custom transformers, cross-validation, or transformations that create a derived training view before fitting. Missing object classification or split lineage is therefore `unsupported`, and an unmatched derived input is `review`, rather than inferred as safe or leaky.

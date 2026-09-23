@@ -14,6 +14,8 @@ Unknown fields and unknown versions are rejected. Models are frozen and slotted,
 
 Never use execution failure as evidence that an experiment is methodologically invalid. Never treat unsupported or skipped evidence as pass.
 
+Deterministic `CheckResult` values use `pass`, `fail`, `review`, `not_applicable`, `unsupported`, or `error`. Pass/fail/review require evidence, fail/review require a corresponding finding, and unsupported/error make the overall audit incomplete.
+
 ## Execution invariants
 
 - Docker execution is explicit and never falls back to the host.
@@ -28,6 +30,7 @@ Never use execution failure as evidence that an experiment is methodologically i
 - Original user cell source is not changed.
 - Runtime events are contiguous, ordered from one, and link to an original cell.
 - Every serialized event contains at least one supported input or output data fingerprint.
+- Supported scikit-learn method events classify the object as a transformer or estimator; missing classification makes preprocessing analysis unsupported.
 - Metric artifacts remain separate from runtime metric events because they serve different consumers.
 - Manifest-variable metrics have weaker provenance and must retain a distinct capture method.
 - Synthetic cells and transient execution metadata do not affect the normalized notebook-output fingerprint.
@@ -35,10 +38,18 @@ Never use execution failure as evidence that an experiment is methodologically i
 ## Privacy invariants
 
 - Raw dataset rows and full notebook outputs are not serialized into reports.
+- Entity-overlap reports contain only aggregate unique counts, overlap count, and overlap rate; entity values and entity-level hashes remain inside the kernel.
 - Runtime data fingerprints use HMAC-SHA-256 with a new random key for every execution.
 - The key is not emitted; only an opaque scope ID, type, dimensions, and digest are returned.
 - Do not change fingerprints to stable unsalted hashes without a documented threat model and explicit product decision.
 - Package inventories are hashed; reports expose only the aggregate hash and basic platform fields.
+
+## Leakage-check invariants
+
+- Entity overlap is established from in-kernel aggregate measurements, not row fingerprint inference.
+- Preprocessing fit scope is established only from supported transformer events and same-execution split lineage.
+- A transformer fitted before the split, on the full split input, or on the held-out output is a confirmed blocking violation.
+- Unmatched fit lineage is `review`; absent required lineage or metadata is `unsupported`. Neither outcome is pass.
 
 ## Reproducibility invariants
 

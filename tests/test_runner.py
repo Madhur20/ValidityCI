@@ -19,6 +19,10 @@ from validityci.schemas import (
     MetricCaptureStatus,
     MetricSelector,
     ResourceLimits,
+    RuntimeDataFingerprint,
+    RuntimeEvent,
+    RuntimeEventType,
+    RuntimeTrace,
 )
 
 
@@ -32,6 +36,7 @@ class ExecutionSchemaTests(unittest.TestCase):
             metric_selector=MetricSelector(
                 metric_name="accuracy", variable_name="accuracy"
             ),
+            entity_column="customer_id",
         )
         result = ExecutionResult(
             execution_id="execution.original",
@@ -49,6 +54,7 @@ class ExecutionSchemaTests(unittest.TestCase):
         )
 
         self.assertEqual(restored_request, request)
+        self.assertEqual(restored_request.entity_column, "customer_id")
         self.assertEqual(restored_result, result)
 
     def test_unsupported_metric_round_trips_without_a_value(self) -> None:
@@ -174,6 +180,7 @@ class RunnerOrchestrationTests(unittest.TestCase):
             duration_ms=10,
             output_fingerprint="sha256:stable",
             metrics=(ExecutionSchemaTests._captured_metric(),),
+            runtime_trace=self._clean_entity_trace(),
         )
         runner = FakeRunner([result])
 
@@ -250,6 +257,61 @@ class RunnerOrchestrationTests(unittest.TestCase):
 
         self.assertEqual(report.status, AuditStatus.INCOMPLETE)
 
+    def test_entity_overlap_adds_blocking_finding(self) -> None:
+        result = ExecutionResult(
+            execution_id="execution.original",
+            status=ExecutionStatus.SUCCEEDED,
+            duration_ms=10,
+            output_fingerprint="sha256:stable",
+            metrics=(ExecutionSchemaTests._captured_metric(),),
+            runtime_trace=self._clean_entity_trace(overlap_count=2),
+        )
+
+        report = self._audit(FakeRunner([result]))
+
+        self.assertEqual(report.status, AuditStatus.ATTENTION_REQUIRED)
+        self.assertEqual(report.checks[0].status, "fail")
+        overlap_finding = next(
+            finding
+            for finding in report.findings
+            if finding.check_id == "split.entity_overlap"
+        )
+        self.assertEqual(overlap_finding.severity, "blocking")
+
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "audit.html"
+            write_html(report, output)
+            rendered = output.read_text(encoding="utf-8")
+        self.assertIn("Deterministic checks", rendered)
+        self.assertIn("split.entity_overlap", rendered)
+        self.assertIn("FAIL", rendered)
+
+    def test_preprocessing_leakage_adds_blocking_finding(self) -> None:
+        result = ExecutionResult(
+            execution_id="execution.original",
+            status=ExecutionStatus.SUCCEEDED,
+            duration_ms=10,
+            output_fingerprint="sha256:stable",
+            metrics=(ExecutionSchemaTests._captured_metric(),),
+            runtime_trace=self._preprocessing_leak_trace(),
+        )
+
+        report = self._audit(FakeRunner([result]))
+
+        self.assertEqual(report.status, AuditStatus.ATTENTION_REQUIRED)
+        preprocessing_check = next(
+            check
+            for check in report.checks
+            if check.check_id == "preprocessing.fit_scope"
+        )
+        self.assertEqual(preprocessing_check.status, "fail")
+        preprocessing_finding = next(
+            finding
+            for finding in report.findings
+            if finding.check_id == "preprocessing.fit_scope"
+        )
+        self.assertEqual(preprocessing_finding.severity, "blocking")
+
     def test_execution_failure_is_visible_in_html_report(self) -> None:
         runner = FakeRunner(
             [
@@ -287,6 +349,8 @@ class RunnerOrchestrationTests(unittest.TestCase):
         )
         report = self._audit(FakeRunner([result]))
 
+        self.assertEqual(report.status, AuditStatus.INCOMPLETE)
+
         with TemporaryDirectory() as directory:
             output = Path(directory) / "audit.html"
             write_html(report, output)
@@ -307,6 +371,94 @@ class RunnerOrchestrationTests(unittest.TestCase):
             root / "examples" / "validityci.toml",
             runner=runner,
             limits=limits,
+        )
+
+    @staticmethod
+    def _clean_entity_trace(*, overlap_count: int = 0) -> RuntimeTrace:
+        data = RuntimeDataFingerprint(
+            role="input.0",
+            fingerprint="hmac-sha256:data",
+            data_type="dataframe",
+            row_count=20,
+            column_count=3,
+        )
+        return RuntimeTrace(
+            fingerprint_scope_id="scope.test",
+            events=(
+                RuntimeEvent(
+                    id="runtime.1",
+                    sequence=1,
+                    event_type=RuntimeEventType.SPLIT,
+                    operation="sklearn.model_selection.train_test_split",
+                    cell_index=1,
+                    inputs=(data,),
+                    parameters={
+                        "entity_overlap": {
+                            "status": "measured",
+                            "train_unique_count": 15,
+                            "test_unique_count": 5,
+                            "overlap_count": overlap_count,
+                            "test_overlap_rate": overlap_count / 5,
+                        }
+                    },
+                ),
+            ),
+        )
+
+    @staticmethod
+    def _preprocessing_leak_trace() -> RuntimeTrace:
+        full = RuntimeDataFingerprint(
+            role="input.0",
+            fingerprint="hmac-sha256:full",
+            data_type="dataframe",
+            row_count=20,
+            column_count=3,
+        )
+        train = RuntimeDataFingerprint(
+            role="output.0",
+            fingerprint="hmac-sha256:train",
+            data_type="dataframe",
+            row_count=15,
+            column_count=3,
+        )
+        test = RuntimeDataFingerprint(
+            role="output.1",
+            fingerprint="hmac-sha256:test",
+            data_type="dataframe",
+            row_count=5,
+            column_count=3,
+        )
+        return RuntimeTrace(
+            fingerprint_scope_id="scope.test",
+            events=(
+                RuntimeEvent(
+                    id="runtime.1",
+                    sequence=1,
+                    event_type=RuntimeEventType.SPLIT,
+                    operation="sklearn.model_selection.train_test_split",
+                    cell_index=1,
+                    inputs=(full,),
+                    outputs=(train, test),
+                    parameters={
+                        "entity_overlap": {
+                            "status": "measured",
+                            "train_unique_count": 15,
+                            "test_unique_count": 5,
+                            "overlap_count": 0,
+                            "test_overlap_rate": 0.0,
+                        }
+                    },
+                ),
+                RuntimeEvent(
+                    id="runtime.2",
+                    sequence=2,
+                    event_type=RuntimeEventType.FIT,
+                    operation="sklearn.preprocessing.StandardScaler.fit",
+                    cell_index=2,
+                    inputs=(test,),
+                    parameters={"object_kind": "transformer"},
+                ),
+            ),
         )
 
 

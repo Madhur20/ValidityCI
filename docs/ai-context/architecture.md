@@ -15,6 +15,8 @@ cli.main
       │       ├─ hidden collector
       │       └─ ExecutionResult JSON
       ├─ run_metric_suitability_check
+      ├─ run_entity_overlap_check (when executed)
+      ├─ run_preprocessing_order_check (when executed)
       ├─ compare_executions (when two runs exist)
       └─ AuditReport
           ├─ write_json
@@ -57,3 +59,7 @@ Static inspection always happens. Docker execution is optional, and valid static
 The host never rewrites notebook source. The container inserts a setup cell before all original cells, a current-cell marker before each user code cell, and one collector after all original cells; synthetic cells are removed before output fingerprinting.
 
 The setup wraps supported metric and split functions and scikit-learn estimator method access. Events are recorded when operations complete, so composite operations such as `fit_transform` can contain nested events before the enclosing event.
+
+When an entity column is configured, split instrumentation looks only among values actually passed to `train_test_split`. It computes entity-set intersection inside the kernel and emits aggregate counts; `checks/entity_overlap.py` converts those aggregates into an explicit check result, evidence, and an optional finding.
+
+Completed scikit-learn method events carry an `object_kind` of `transformer` or `estimator`. `checks/preprocessing_order.py` compares transformer-fit inputs with prior split inputs and outputs to classify train-only fitting, confirmed leakage, or lineage that needs review without exporting data values.
