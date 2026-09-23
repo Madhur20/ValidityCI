@@ -13,6 +13,7 @@ from validityci.schemas import (
     ExecutionRequest,
     ExecutionResult,
     ExecutionStatus,
+    ExecutionVariant,
     MetricArtifact,
     MetricCaptureMethod,
     MetricCaptureStatus,
@@ -79,6 +80,8 @@ class DockerRunnerTests(unittest.TestCase):
         self.assertIn("accuracy", self._option_values(command, "--metric-variable"))
         self.assertIn("entity_id", self._option_values(command, "--entity-column"))
         self.assertIn("1", self._option_values(command, "--positive-class"))
+        self.assertIn("observed", self._option_values(command, "--execution-variant"))
+        self.assertIn("42", self._option_values(command, "--random-seed"))
         self.assertNotIn("--privileged", command)
         self.assertEqual(observed["kwargs"]["timeout"], 2)  # type: ignore[index]
 
@@ -128,6 +131,35 @@ class DockerRunnerTests(unittest.TestCase):
         remove_commands = [command for command in commands if command[1:3] == ["rm", "--force"]]
         self.assertTrue(remove_commands)
 
+    def test_counterfactual_variant_is_forwarded_and_preserved_on_timeout(self) -> None:
+        with TemporaryDirectory() as directory:
+            request = self._request(
+                Path(directory),
+                execution_variant=ExecutionVariant.GROUP_ISOLATED_COUNTERFACTUAL,
+            )
+            commands: list[list[str]] = []
+
+            def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+                commands.append(command)
+                if command[1] == "run":
+                    raise subprocess.TimeoutExpired(
+                        command, request.limits.timeout_seconds
+                    )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with patch("validityci.runner.docker.subprocess.run", side_effect=run):
+                result = DockerRunner().execute(request)
+
+        run_command = next(command for command in commands if command[1] == "run")
+        self.assertIn(
+            "group_isolated_counterfactual",
+            self._option_values(run_command, "--execution-variant"),
+        )
+        self.assertEqual(
+            result.execution_variant,
+            ExecutionVariant.GROUP_ISOLATED_COUNTERFACTUAL,
+        )
+
     def test_network_request_is_rejected_before_docker_is_called(self) -> None:
         with TemporaryDirectory() as directory:
             request = self._request(Path(directory), network_enabled=True)
@@ -151,7 +183,12 @@ class DockerRunnerTests(unittest.TestCase):
         self.assertEqual(result.failure.kind, "docker_unavailable")  # type: ignore[union-attr]
 
     @staticmethod
-    def _request(root: Path, *, network_enabled: bool = False) -> ExecutionRequest:
+    def _request(
+        root: Path,
+        *,
+        network_enabled: bool = False,
+        execution_variant: ExecutionVariant = ExecutionVariant.OBSERVED,
+    ) -> ExecutionRequest:
         notebook = root / "experiment.ipynb"
         notebook.write_text('{"cells": []}', encoding="utf-8")
         data = root / "data.csv"
@@ -168,6 +205,7 @@ class DockerRunnerTests(unittest.TestCase):
             ),
             entity_column="entity_id",
             positive_class="1",
+            execution_variant=execution_variant,
             limits=ResourceLimits(
                 timeout_seconds=2,
                 memory_mb=256,

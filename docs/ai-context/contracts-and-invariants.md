@@ -24,11 +24,13 @@ Deterministic `CheckResult` values use `pass`, `fail`, `review`, `not_applicable
 - Network remains disabled, inputs and root are read-only, and only the dedicated temporary output mount is writable.
 - A host wall timeout forcibly removes the named container; a cell timeout remains a structured notebook result.
 - Container output is size-bounded before parsing and must match the requested execution ID.
+- Container output must also match the requested execution variant (`observed` or `group_isolated_counterfactual`).
 
 ## Instrumentation invariants
 
 - Original user cell source is not changed.
 - Runtime events are contiguous, ordered from one, and link to an original cell.
+- Supported cross-validation emits one split event per yielded fold with a one-based fold index; train/test row indices are never serialized.
 - Every serialized event contains at least one supported input or output data fingerprint.
 - Supported scikit-learn method events classify the object as a transformer or estimator; missing classification makes preprocessing analysis unsupported.
 - Metric artifacts remain separate from runtime metric events because they serve different consumers.
@@ -36,6 +38,7 @@ Deterministic `CheckResult` values use `pass`, `fail`, `review`, `not_applicable
 - Captured confusion matrices contain only four non-negative aggregate counts and the already-declared positive class; target and prediction arrays never enter the execution result.
 - One-class evaluation slices may still produce a binary confusion matrix. More than two observed labels, ambiguous positive-class matching, or score-valued predictions are explicitly unsupported.
 - Synthetic cells and transient execution metadata do not affect the normalized notebook-output fingerprint.
+- A group-isolated counterfactual is a distinct execution variant and never participates in the observed-run reproducibility comparison.
 
 ## Privacy invariants
 
@@ -50,6 +53,7 @@ Deterministic `CheckResult` values use `pass`, `fail`, `review`, `not_applicable
 
 - Entity overlap is established from in-kernel aggregate measurements, not row fingerprint inference.
 - Preprocessing fit scope is established only from supported transformer events and same-execution split lineage.
+- Every captured holdout or cross-validation split is evaluated independently; a clean split cannot mask a later violation.
 - A transformer fitted before the split, on the full split input, or on the held-out output is a confirmed blocking violation.
 - Unmatched fit lineage is `review`; absent required lineage or metadata is `unsupported`. Neither outcome is pass.
 
@@ -61,9 +65,20 @@ Deterministic `CheckResult` values use `pass`, `fail`, `review`, `not_applicable
 - Metric, normalized output, and environment comparisons remain separate signals.
 - Two matching runs are evidence of stability, not proof of determinism or methodological validity.
 
+## Counterfactual invariants
+
+- Counterfactual execution is opt-in and requires a configured entity column; it never overwrites notebook source.
+- The initial adapter transforms only supported `train_test_split` calls and records each applied transformation.
+- It preserves an explicit notebook `random_state`; when absent, it uses the manifest's declared random seed so the intervention itself is controlled.
+- A completed comparison requires successful observed and group-isolated variants, at least one transformed split, and exactly one captured primary metric in each execution.
+- The signed delta is `counterfactual - observed`; an unsupported transformation or ambiguous metric selection makes the comparison and audit `incomplete`.
+- Entity values and generated train/test indices remain inside the kernel.
+
 ## Finding invariants
 
 - Findings originate from deterministic checks over captured evidence.
 - Every finding references immutable evidence IDs.
+- Every finding records a stable policy ID and policy version from the deterministic catalog.
+- Unknown check/outcome combinations must fail closed instead of receiving an ad hoc severity or confidence.
 - Severity must reflect evidence strength; heuristic source observations should not become blocking runtime claims.
 - Reporting and any future LLM may explain findings but may not create unsupported blocking verdicts.

@@ -8,7 +8,7 @@ cli.main
       ├─ ExperimentConfig.from_toml
       ├─ inspect_notebook
       ├─ profile_csv
-      ├─ Runner.execute (optional, once or twice)
+      ├─ Runner.execute (optional, one or two observed runs plus counterfactual)
       │   └─ DockerRunner → container execute_notebook.py
       │       ├─ hidden instrumentation setup
       │       ├─ nbclient notebook execution
@@ -18,6 +18,8 @@ cli.main
       ├─ run_entity_overlap_check (when executed)
       ├─ run_preprocessing_order_check (when executed)
       ├─ compare_executions (when two runs exist)
+      ├─ compare_group_isolated_counterfactual (when requested)
+      ├─ resolve_finding_policy (for every finding outcome)
       └─ AuditReport
           ├─ write_json
           └─ write_html
@@ -42,6 +44,8 @@ Static inspection always happens. Docker execution is optional, and valid static
 | `docker/runner/Dockerfile` | Pinned execution environment and non-root user. |
 | `docker/runner/execute_notebook.py` | Kernel instrumentation, notebook execution, normalization, and container result creation. |
 | `src/validityci/reproducibility.py` | Comparison logic for two terminal execution results. |
+| `src/validityci/counterfactual.py` | Validation and signed metric comparison for observed and group-isolated executions. |
+| `src/validityci/policy.py` | Versioned severity/confidence catalog for supported finding outcomes. |
 | `src/validityci/reporting.py` | JSON and HTML presentation only; it must not create new findings. |
 | `tests/` | Dependency-free contracts, orchestration, runner, reporting, reproducibility, and trace tests. |
 | `examples/` | Small declared experiments and the full instrumentation benchmark. |
@@ -58,8 +62,10 @@ Static inspection always happens. Docker execution is optional, and valid static
 
 The host never rewrites notebook source. The container inserts a setup cell before all original cells, a current-cell marker before each user code cell, and one collector after all original cells; synthetic cells are removed before output fingerprinting.
 
-The setup wraps supported metric and split functions and scikit-learn estimator method access. Metric wrappers retain scalar values plus aggregate binary confusion counts relative to the declared positive class; labels and predictions remain inside the kernel. Events are recorded when operations complete, so composite operations such as `fit_transform` can contain nested events before the enclosing event.
+The setup wraps supported metric functions, `train_test_split`, `BaseCrossValidator.split`, and scikit-learn estimator method access. Cross-validation folds are reconstructed with scikit-learn's safe indexing so later fit inputs match fold-training fingerprints; row indices are not exported. Metric wrappers retain scalar values plus aggregate binary confusion counts relative to the declared positive class; labels and predictions remain inside the kernel. Events are recorded when operations complete, so composite operations such as `fit_transform` can contain nested events before the enclosing event.
 
 When an entity column is configured, split instrumentation looks only among values actually passed to `train_test_split`. It computes entity-set intersection inside the kernel and emits aggregate counts; `checks/entity_overlap.py` converts those aggregates into an explicit check result, evidence, and an optional finding.
 
 Completed scikit-learn method events carry an `object_kind` of `transformer` or `estimator`. `checks/preprocessing_order.py` compares transformer-fit inputs with prior split inputs and outputs to classify train-only fitting, confirmed leakage, or lineage that needs review without exporting data values.
+
+For the opt-in group counterfactual, the same setup cell replaces only supported `train_test_split` calls with `GroupShuffleSplit` during a separately labeled execution. It safe-indexes every positional array with the generated partitions, records the transformation and aggregate overlap, and leaves the source notebook untouched; the host compares its single captured primary metric with the observed baseline.

@@ -36,6 +36,8 @@ def write_html(report: AuditReport, path: str | Path) -> None:
             f"<p class='severity'>{escape(finding.severity.upper())} · {escape(finding.confidence)} confidence</p>"
             f"<h2>{escape(finding.title)}</h2>"
             f"<p>{escape(finding.summary)}</p>"
+            f"<p>Policy: <code>{escape(finding.policy_id)}</code> "
+            f"v{escape(finding.policy_version)}</p>"
             f"<ul>{''.join(evidence_items)}</ul>"
             f"<p><strong>Recommendation:</strong> {escape(finding.recommendation)}</p>"
             "</section>"
@@ -133,7 +135,8 @@ def write_html(report: AuditReport, path: str | Path) -> None:
             )
         execution_items.append(
             "<li>"
-            f"<strong>{escape(execution.status.replace('_', ' '))}</strong>{cell} "
+            f"<strong>{escape(execution.status.replace('_', ' '))}</strong> · "
+            f"{escape(execution.execution_variant.replace('_', ' '))}{cell} "
             f"· {execution.duration_ms} ms<br>{detail}"
             f"{environment}"
             f"{metrics}"
@@ -186,6 +189,26 @@ def write_html(report: AuditReport, path: str | Path) -> None:
             f"<section><h2>Deterministic checks</h2><ul>{check_items}</ul></section>"
         )
 
+    counterfactual_section = ""
+    if report.counterfactual is not None:
+        comparison = report.counterfactual
+        if comparison.metric_delta is None:
+            metric_summary = escape(comparison.reason or "Comparison unavailable")
+        else:
+            metric_summary = (
+                f"Observed <code>{comparison.baseline_metric_value:.12g}</code> → "
+                f"group-isolated <code>{comparison.counterfactual_metric_value:.12g}</code> "
+                f"(delta <code>{comparison.metric_delta:+.12g}</code>)"
+            )
+        counterfactual_section = (
+            "<section><h2>Group-isolated counterfactual</h2>"
+            f"<p><strong>{escape(comparison.status.upper())}</strong></p>"
+            f"<p>{metric_summary}</p>"
+            f"<p>{comparison.transformation_count} supported split "
+            f"transformation{'s' if comparison.transformation_count != 1 else ''}</p>"
+            "</section>"
+        )
+
     html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -210,6 +233,7 @@ def write_html(report: AuditReport, path: str | Path) -> None:
   </header>
   {execution_section}
   {reproducibility_section}
+  {counterfactual_section}
   {checks_section}
   {''.join(finding_sections)}
 </body>

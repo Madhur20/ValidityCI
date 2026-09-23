@@ -28,6 +28,8 @@
 - Trace scikit-learn predictions and supported metric calculations — implemented
 - Associate every supported runtime event with its original notebook cell — implemented
 - Fingerprint datasets with run-scoped HMACs without storing row values or the key — implemented
+- Trace supported `BaseCrossValidator` folds with fold-level lineage — implemented
+- Apply entity-overlap and preprocessing-scope checks independently to every captured fold — implemented
 
 Custom split functions, non-scikit-learn estimators, estimator `score`, and third-party metric libraries remain outside the supported surface and are not inferred.
 
@@ -37,14 +39,16 @@ Custom split functions, non-scikit-learn estimators, estimator `score`, and thir
 - Detect preprocessing fitted before a split or on evaluation data — initial supported implementation completed
 - Expand metric checks with confusion-matrix evidence — initial supported implementation completed
 - Add explicit check statuses — implemented
-- Expand severity and confidence policies
+- Centralize and version severity/confidence policies — initial implementation completed
 
-## Milestone 5: independent counterfactual
+## Milestone 5: independent counterfactual — initial supported surface completed
 
-- Replace a random row split with a configured group-isolated split
-- Rerun the experiment
-- Compare the original and counterfactual metrics
-- Record the transformation and evidence
+- Replace a supported random row split with a configured group-isolated split — implemented
+- Rerun the experiment in a separately labeled restricted execution — implemented
+- Compare exactly one original and counterfactual primary-metric call — implemented
+- Record the transformation, signed delta, and privacy-minimized overlap evidence — implemented
+
+Custom split functions, cross-validation counterfactuals, multiple primary-metric calls, and semantics such as stratification beyond group isolation remain explicit initial limits.
 
 ## Milestone 6: AI investigator
 

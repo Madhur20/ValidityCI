@@ -26,6 +26,8 @@ class EntityOverlapCheckTests(unittest.TestCase):
         self.assertEqual(check.status, CheckStatus.FAIL)
         self.assertEqual(findings[0].severity, "blocking")
         self.assertEqual(findings[0].confidence, "high")
+        self.assertEqual(findings[0].policy_id, "policy.entity_overlap_confirmed")
+        self.assertEqual(findings[0].policy_version, "1.0.0")
         details = evidence[0].to_dict()["details"]
         self.assertEqual(details["splits"][0]["overlap_count"], 2)
         self.assertEqual(details["splits"][0]["test_overlap_rate"], 0.5)
@@ -134,6 +136,21 @@ class EntityOverlapCheckTests(unittest.TestCase):
         self.assertEqual(len(evidence[0].details["splits"]), 2)
         self.assertEqual(len(findings), 1)
 
+    def test_cross_validation_folds_are_evaluated_independently(self) -> None:
+        execution = self._cross_validation_execution((0, 1))
+
+        check, evidence, findings = run_entity_overlap_check(
+            self._config(), (execution,)
+        )
+
+        self.assertEqual(check.status, CheckStatus.FAIL)
+        splits = evidence[0].details["splits"]
+        self.assertEqual(
+            [(item["split_kind"], item["fold_index"]) for item in splits],
+            [("cross_validation", 1), ("cross_validation", 2)],
+        )
+        self.assertEqual(findings[0].policy_id, "policy.entity_overlap_confirmed")
+
     def test_check_result_round_trips(self) -> None:
         original = CheckResult(
             check_id="split.entity_overlap",
@@ -193,6 +210,49 @@ class EntityOverlapCheckTests(unittest.TestCase):
             output_fingerprint="sha256:output",
             runtime_trace=RuntimeTrace(
                 fingerprint_scope_id=f"scope.{execution_id}", events=(event,)
+            ),
+        )
+
+    @staticmethod
+    def _cross_validation_execution(
+        overlap_counts: tuple[int, ...],
+    ) -> ExecutionResult:
+        fingerprint = RuntimeDataFingerprint(
+            role="input.0",
+            fingerprint="hmac-sha256:data",
+            data_type="dataframe",
+            row_count=10,
+            column_count=2,
+        )
+        events = tuple(
+            RuntimeEvent(
+                id=f"runtime.{index}",
+                sequence=index,
+                event_type=RuntimeEventType.SPLIT,
+                operation="sklearn.model_selection._split.GroupKFold.split",
+                cell_index=2,
+                inputs=(fingerprint,),
+                parameters={
+                    "split_kind": "cross_validation",
+                    "fold_index": index,
+                    "entity_overlap": {
+                        "status": "measured",
+                        "train_unique_count": 5,
+                        "test_unique_count": 5,
+                        "overlap_count": overlap_count,
+                        "test_overlap_rate": overlap_count / 5,
+                    },
+                },
+            )
+            for index, overlap_count in enumerate(overlap_counts, start=1)
+        )
+        return ExecutionResult(
+            execution_id="execution.original",
+            status=ExecutionStatus.SUCCEEDED,
+            duration_ms=10,
+            output_fingerprint="sha256:output",
+            runtime_trace=RuntimeTrace(
+                fingerprint_scope_id="scope.execution.original", events=events
             ),
         )
 

@@ -37,6 +37,9 @@ class PreprocessingOrderCheckTests(unittest.TestCase):
         self.assertEqual(findings[0].severity, "blocking")
         self.assertEqual(findings[0].confidence, "high")
         self.assertEqual(
+            findings[0].policy_id, "policy.preprocessing_leakage_confirmed"
+        )
+        self.assertEqual(
             evidence[0].details["observations"][0]["outcome"],
             "fit_before_split",
         )
@@ -73,6 +76,9 @@ class PreprocessingOrderCheckTests(unittest.TestCase):
         self.assertEqual(check.status, CheckStatus.REVIEW)
         self.assertEqual(findings[0].severity, "warning")
         self.assertEqual(findings[0].confidence, "medium")
+        self.assertEqual(
+            findings[0].policy_id, "policy.preprocessing_lineage_review"
+        )
         self.assertEqual(
             evidence[0].details["observations"][0]["outcome"],
             "unverified_fit_scope",
@@ -134,6 +140,67 @@ class PreprocessingOrderCheckTests(unittest.TestCase):
         self.assertEqual(check.status, CheckStatus.FAIL)
         self.assertEqual(len(evidence[0].details["observations"]), 2)
         self.assertEqual(len(findings), 1)
+
+    def test_transformers_fitted_on_each_cross_validation_fold_pass(self) -> None:
+        check, evidence, findings = run_preprocessing_order_check(
+            (self._cross_validation_execution(),)
+        )
+
+        self.assertEqual(check.status, CheckStatus.PASS)
+        observations = evidence[0].details["observations"]
+        self.assertEqual(len(observations), 2)
+        self.assertEqual(
+            [(item["split_kind"], item["fold_index"]) for item in observations],
+            [("cross_validation", 1), ("cross_validation", 2)],
+        )
+        self.assertEqual(findings, ())
+
+    def test_cross_validation_fit_on_held_out_fold_is_blocking(self) -> None:
+        check, evidence, findings = run_preprocessing_order_check(
+            (self._cross_validation_execution(leaky_second_fold=True),)
+        )
+
+        self.assertEqual(check.status, CheckStatus.FAIL)
+        self.assertEqual(
+            evidence[0].details["observations"][1]["outcome"],
+            "fit_on_test_data",
+        )
+        self.assertEqual(findings[0].severity, "blocking")
+
+    def test_parallel_cross_validation_is_unsupported(self) -> None:
+        execution = self._cross_validation_execution()
+        events = tuple(
+            RuntimeEvent(
+                id=event.id,
+                sequence=event.sequence,
+                event_type=event.event_type,
+                operation=event.operation,
+                cell_index=event.cell_index,
+                inputs=event.inputs,
+                outputs=event.outputs,
+                parameters=(
+                    {**event.parameters, "parallel_execution": True}
+                    if event.event_type is RuntimeEventType.SPLIT
+                    else event.parameters
+                ),
+            )
+            for event in execution.runtime_trace.events  # type: ignore[union-attr]
+        )
+        execution = ExecutionResult(
+            execution_id=execution.execution_id,
+            status=execution.status,
+            duration_ms=execution.duration_ms,
+            output_fingerprint=execution.output_fingerprint,
+            runtime_trace=RuntimeTrace(
+                fingerprint_scope_id="scope.parallel", events=events
+            ),
+        )
+
+        check, evidence, findings = run_preprocessing_order_check((execution,))
+
+        self.assertEqual(check.status, CheckStatus.UNSUPPORTED)
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(findings, ())
 
     def test_evidence_contains_no_data_values(self) -> None:
         _, evidence, _ = run_preprocessing_order_check((self._execution("full"),))
@@ -200,6 +267,66 @@ class PreprocessingOrderCheckTests(unittest.TestCase):
             output_fingerprint="sha256:output",
             runtime_trace=RuntimeTrace(
                 fingerprint_scope_id=f"scope.{execution_id}", events=events
+            ),
+        )
+
+    @classmethod
+    def _cross_validation_execution(
+        cls, *, leaky_second_fold: bool = False
+    ) -> ExecutionResult:
+        full = cls._data("full", 20)
+        fold_1_train = cls._data("fold_1_train", 10)
+        fold_1_test = cls._data("fold_1_test", 10)
+        fold_2_train = cls._data("fold_2_train", 10)
+        fold_2_test = cls._data("fold_2_test", 10)
+        events = (
+            RuntimeEvent(
+                id="runtime.1",
+                sequence=1,
+                event_type=RuntimeEventType.SPLIT,
+                operation="sklearn.model_selection._split.GroupKFold.split",
+                cell_index=1,
+                inputs=(full,),
+                outputs=(fold_1_train, fold_1_test),
+                parameters={"split_kind": "cross_validation", "fold_index": 1},
+            ),
+            RuntimeEvent(
+                id="runtime.2",
+                sequence=2,
+                event_type=RuntimeEventType.FIT,
+                operation="sklearn.preprocessing.StandardScaler.fit",
+                cell_index=1,
+                inputs=(fold_1_train,),
+                parameters={"object_kind": "transformer"},
+            ),
+            RuntimeEvent(
+                id="runtime.3",
+                sequence=3,
+                event_type=RuntimeEventType.SPLIT,
+                operation="sklearn.model_selection._split.GroupKFold.split",
+                cell_index=1,
+                inputs=(full,),
+                outputs=(fold_2_train, fold_2_test),
+                parameters={"split_kind": "cross_validation", "fold_index": 2},
+            ),
+            RuntimeEvent(
+                id="runtime.4",
+                sequence=4,
+                event_type=RuntimeEventType.FIT,
+                operation="sklearn.preprocessing.StandardScaler.fit",
+                cell_index=1,
+                inputs=(fold_2_test if leaky_second_fold else fold_2_train,),
+                parameters={"object_kind": "transformer"},
+            ),
+        )
+        return ExecutionResult(
+            execution_id="execution.original",
+            status=ExecutionStatus.SUCCEEDED,
+            duration_ms=10,
+            output_fingerprint="sha256:output",
+            runtime_trace=RuntimeTrace(
+                fingerprint_scope_id="scope.execution.original",
+                events=events,
             ),
         )
 

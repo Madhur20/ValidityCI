@@ -2,7 +2,7 @@
 
 ## Thirty-second explanation
 
-ValidityCI is an independent validation gate for machine-learning experiments. Instead of reviewing whether notebook code looks reasonable, it executes a declared experiment twice in fresh restricted environments and builds evidence about what actually happened. The current system compares normalized metrics, notebook outputs, and environment fingerprints; it captures privacy-minimized lineage, aggregate confusion counts, and blocking evidence for configured entity overlap or supported preprocessing leakage. The next work is severity-policy refinement and broader regression coverage.
+ValidityCI is an independent validation gate for machine-learning experiments. Instead of reviewing whether notebook code looks reasonable, it executes a declared experiment in fresh restricted environments and builds evidence about what actually happened. The current system compares normalized metrics, notebook outputs, and environment fingerprints; it captures privacy-minimized holdout and cross-validation lineage, aggregate confusion counts, and policy-versioned findings for entity overlap or preprocessing leakage. It can also run a labeled group-isolated counterfactual without editing the notebook and report the signed metric delta.
 
 ## Why this is not another AI code reviewer
 
@@ -23,6 +23,9 @@ The important failures in ML experiments are often methodological rather than sy
 11. Entity overlap is computed beside the data inside the temporary kernel; only counts and rates enter the evidence report.
 12. Transformer fit scope is classified from same-run split lineage; confirmed pre-split/full/test fitting is blocking, while ambiguity remains review or unsupported.
 13. Binary metric evidence adds `TN`, `FP`, `FN`, and `TP` inside the kernel without exporting target or prediction arrays.
+14. A central versioned policy assigns severity and confidence; every finding records the policy decision that produced its reviewer impact.
+15. Supported cross-validation emits one privacy-minimized event per fold, allowing the same leakage checks to cover pipelines without storing row indices.
+16. An opt-in group-isolated execution reuses the restricted runner while remaining separate from reproducibility; it reports the applied transformation, aggregate overlap, and signed metric delta.
 
 ## Useful deep-dive questions
 
@@ -59,7 +62,7 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 - The supported execution environment is intentionally limited to Python, pandas, and scikit-learn.
 - Deterministic checks currently cover metric suitability for imbalanced binary classification, entity overlap, and preprocessing fit scope for supported splits.
 - Runtime capture currently covers six scikit-learn metric functions and aggregate binary confusion counts for label-valued calls; continuous-score confusion evidence, estimator `.score`, custom functions, and third-party metric libraries need explicit support or the manifest fallback.
-- Runtime lineage covers scikit-learn `train_test_split` and `BaseEstimator` fit/transform/predict methods. Custom and third-party operations are outside the initial adapter and cannot yet be detected as observed-but-unsupported calls.
+- Runtime lineage covers scikit-learn `train_test_split`, `BaseCrossValidator` folds, and `BaseEstimator` fit/transform/predict methods. Custom iterable splitters and third-party operations are outside the initial adapter and cannot yet be detected as observed-but-unsupported calls.
 - Entity overlap is supported only when the configured entity column or named series is explicitly passed through `train_test_split`; otherwise the check is `unsupported` rather than inferred.
 - Output comparison detects a changed normalized output but does not yet localize the first differing cell or value.
 - Dependency locking and environment fingerprinting are not complete.
@@ -75,7 +78,8 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 5. Show the normalized `accuracy = 0.9` artifact, its original cell, and its 20-sample count.
 6. Show a seeded stable run marked `reproduced` across metric, output, and environment.
 7. Show an unseeded run with its metric delta and reproducibility finding.
-8. Show the runtime benchmark's ordered events, clean entity/preprocessing results, and aggregate confusion matrix; then show the entity-overlap and pre-split preprocessing benchmarks with their blocking findings. End with severity-policy refinement and broader regression benchmarks.
+8. Show the runtime benchmark's ordered events, clean entity/preprocessing results, and aggregate confusion matrix; then show clean and flawed cross-validation runs where group isolation passes but pre-fold preprocessing is independently blocked.
+9. Finish with the repeated-entity benchmark: the observed split overlaps entities, the counterfactual removes overlap, and both metric values plus the signed delta appear together without changing the notebook.
 
 ## Claims to avoid
 

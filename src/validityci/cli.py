@@ -40,6 +40,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=2,
         help="Number of fresh executions when --execute is enabled (default: 2)",
     )
+    audit_parser.add_argument(
+        "--group-counterfactual",
+        action="store_true",
+        help=(
+            "Run one additional execution with supported train/test splits "
+            "replaced by a configured group-isolated split"
+        ),
+    )
     return parser
 
 
@@ -48,6 +56,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     try:
         if args.command == "audit":
+            if args.group_counterfactual and not args.execute:
+                raise ValueError("--group-counterfactual requires --execute")
             limits = ResourceLimits(
                 timeout_seconds=args.timeout,
                 memory_mb=args.memory,
@@ -63,6 +73,7 @@ def main(argv: list[str] | None = None) -> None:
                 runner=runner,
                 limits=limits,
                 execution_count=args.runs,
+                group_counterfactual=args.group_counterfactual,
             )
             write_json(report, args.output)
             write_html(report, args.html)
@@ -73,6 +84,8 @@ def main(argv: list[str] | None = None) -> None:
                     print(f"Execution {execution.execution_id}: {execution.status}")
             if report.reproducibility is not None:
                 print(f"Reproducibility: {report.reproducibility.status}")
+            if report.counterfactual is not None:
+                print(f"Counterfactual: {report.counterfactual.status}")
             print(f"JSON report: {args.output}")
             print(f"HTML report: {args.html}")
     except (OSError, ValueError) as error:

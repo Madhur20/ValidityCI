@@ -80,6 +80,10 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(report.status, "attention_required")
         self.assertEqual(len(report.findings), 1)
         self.assertEqual(report.findings[0].check_id, "metric_suitability.class_imbalance")
+        self.assertEqual(
+            report.findings[0].policy_id, "policy.metric_accuracy_imbalance"
+        )
+        self.assertEqual(report.findings[0].policy_version, "1.0.0")
         self.assertEqual(report.evidence[0].notebook_cells, (0,))
 
     def test_accepts_f1_for_imbalanced_target(self) -> None:
@@ -129,6 +133,7 @@ class AuditTests(unittest.TestCase):
             rendered = output.read_text(encoding="utf-8")
         self.assertIn("Accuracy may hide minority-class failures", rendered)
         self.assertIn("minority_fraction", rendered)
+        self.assertIn("policy.metric_accuracy_imbalance", rendered)
 
     def test_rejects_dangling_evidence_reference(self) -> None:
         raw = self._build_report().to_dict()

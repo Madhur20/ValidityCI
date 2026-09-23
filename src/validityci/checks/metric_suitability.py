@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+from validityci.policy import resolve_finding_policy
 from validityci.schemas import (
-    Confidence,
     DatasetProfile,
     Evidence,
     ExperimentConfig,
     Finding,
-    Severity,
 )
 
 
@@ -35,12 +34,15 @@ def run_metric_suitability_check(
         },
         notebook_cells=metric_cells,
     )
+    policy = resolve_finding_policy(CHECK_ID, "accuracy_on_imbalanced_target")
     finding = Finding(
         id="finding.metric_accuracy_imbalance",
         check_id=CHECK_ID,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
         title="Accuracy may hide minority-class failures",
-        severity=Severity.WARNING,
-        confidence=Confidence.HIGH,
+        severity=policy.severity,
+        confidence=policy.confidence,
         summary=(
             "The experiment declares accuracy as its primary metric even though "
             "the target is substantially imbalanced."

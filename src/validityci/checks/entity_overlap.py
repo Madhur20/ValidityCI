@@ -3,17 +3,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from validityci.policy import resolve_finding_policy
 from validityci.schemas import (
     CheckResult,
     CheckStatus,
-    Confidence,
     Evidence,
     ExecutionResult,
     ExecutionStatus,
     ExperimentConfig,
     Finding,
     RuntimeEventType,
-    Severity,
 )
 
 
@@ -107,6 +106,8 @@ def run_entity_overlap_check(
                         "execution_id": execution.execution_id,
                         "runtime_event_id": event.id,
                         "cell_index": event.cell_index,
+                        "split_kind": event.parameters.get("split_kind", "holdout"),
+                        "fold_index": event.parameters.get("fold_index"),
                         "train_unique_count": train_count,
                         "test_unique_count": test_count,
                         "overlap_count": overlap_count,
@@ -186,12 +187,15 @@ def run_entity_overlap_check(
         )
 
     maximum = max(overlapping, key=lambda item: item["test_overlap_rate"])
+    policy = resolve_finding_policy(CHECK_ID, "confirmed_overlap")
     finding = Finding(
         id="finding.entity_overlap",
         check_id=CHECK_ID,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
         title="Entities overlap between training and test partitions",
-        severity=Severity.BLOCKING,
-        confidence=Confidence.HIGH,
+        severity=policy.severity,
+        confidence=policy.confidence,
         summary=(
             f"A supported split placed {maximum['overlap_count']} configured "
             f"entities in both training and test data "

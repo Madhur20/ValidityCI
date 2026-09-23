@@ -205,3 +205,25 @@ The first confusion-matrix implementation required exactly two labels across eva
 The capture policy now accepts one or two observed labels. If only the configured positive class appears, all negative-side counts are zero; if only a different class appears, all positive-side counts are zero. More than two labels or a two-label set that cannot uniquely match the configured positive class remains unsupported. The live benchmark then produced `TN=5, FP=0, FN=0, TP=0`, totaling its five samples, with no target or prediction arrays in JSON.
 
 **Lesson:** Binary task semantics come from the declared policy as well as the values present in a small evaluation slice. Absence of a class is evidence, not necessarily unsupported instrumentation.
+
+## H-020 — Fold indices are unnecessary once subsets are fingerprinted
+
+**Type:** Design decision verified in live tests
+
+Cross-validation exposes train/test row indices, but serializing those indices would create row-level artifacts and a new privacy surface. The adapter instead uses the pinned scikit-learn `_safe_indexing` behavior inside the kernel, fingerprints each fold subset, and discards the indices after yielding them back to scikit-learn.
+
+The clean `GroupKFold` benchmark emitted two fold events, measured zero entity overlap in each 10/10 partition, and linked every nested `StandardScaler.fit` to the correct training subset. The paired flawed benchmark fitted the scaler before fold generation; entity isolation passed, while preprocessing scope produced a blocking/high policy-backed finding. Neither report contained train/test indices, entity values, raw data, or the fingerprint key.
+
+A third benchmark used `n_jobs=2`. Fold and entity evidence remained available in the parent process, but transformer events occurred in joblib workers and did not return to the kernel event buffer. Fold metadata now records parallel execution, causing preprocessing analysis to return `unsupported` and the overall audit to remain `incomplete` instead of claiming no preprocessing was present.
+
+**Lesson:** Existing privacy-minimized lineage primitives can often be extended by moving derivation into the kernel rather than widening the serialized contract with row identifiers.
+
+## H-021 — Counterfactual execution must not masquerade as reproducibility
+
+**Type:** Design decision verified in a live benchmark
+
+The group-isolated run intentionally changes partitioning, so comparing it as the second reproducibility run would report expected output and metric differences as instability. The orchestrator now keeps observed executions separate, runs the counterfactual as an additional labeled variant, and gives it a dedicated comparison contract.
+
+On the repeated-entity benchmark, the observed row split measured two overlapping entities and accuracy `0.8333333333333334`. The counterfactual applied one supported transformation, measured zero overlap, and produced accuracy `1.0`, for a signed delta of `+0.16666666666666663`. Both executions succeeded in the restricted `0.6.0` image. The report contained no entity IDs, row indices, or fingerprint key.
+
+**Lesson:** A controlled intervention needs its own lineage and interpretation. Reusing execution infrastructure is valuable, but observed-repeat and changed-policy comparisons must remain distinct evidence types.

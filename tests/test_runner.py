@@ -12,10 +12,12 @@ from validityci.schemas import (
     AuditStatus,
     BinaryConfusionMatrix,
     ConfusionMatrixStatus,
+    CounterfactualStatus,
     ExecutionFailure,
     ExecutionRequest,
     ExecutionResult,
     ExecutionStatus,
+    ExecutionVariant,
     MetricArtifact,
     MetricCaptureMethod,
     MetricCaptureStatus,
@@ -59,6 +61,7 @@ class ExecutionSchemaTests(unittest.TestCase):
         self.assertEqual(restored_request, request)
         self.assertEqual(restored_request.entity_column, "customer_id")
         self.assertEqual(restored_request.positive_class, "1")
+        self.assertEqual(restored_request.random_seed, 42)
         self.assertEqual(restored_result, result)
 
     def test_unsupported_metric_round_trips_without_a_value(self) -> None:
@@ -324,6 +327,60 @@ class RunnerOrchestrationTests(unittest.TestCase):
         )
         self.assertEqual(preprocessing_finding.severity, "blocking")
 
+    def test_group_counterfactual_is_an_extra_labeled_execution(self) -> None:
+        baseline = ExecutionResult(
+            execution_id="execution.original",
+            status=ExecutionStatus.SUCCEEDED,
+            duration_ms=10,
+            output_fingerprint="sha256:observed",
+            metrics=(ExecutionSchemaTests._captured_metric(),),
+            runtime_trace=self._clean_entity_trace(),
+        )
+        counterfactual_metric = MetricArtifact(
+            id="metric.1",
+            metric_name="accuracy",
+            status=MetricCaptureStatus.CAPTURED,
+            capture_method=MetricCaptureMethod.RUNTIME_WRAPPER,
+            value=0.7,
+            cell_index=1,
+            sample_count=10,
+        )
+        counterfactual = ExecutionResult(
+            execution_id="execution.counterfactual.group_isolated",
+            status=ExecutionStatus.SUCCEEDED,
+            duration_ms=11,
+            output_fingerprint="sha256:counterfactual",
+            metrics=(counterfactual_metric,),
+            runtime_trace=self._clean_entity_trace(counterfactual_applied=True),
+            execution_variant=ExecutionVariant.GROUP_ISOLATED_COUNTERFACTUAL,
+        )
+        runner = FakeRunner([baseline, counterfactual])
+
+        report = self._audit(runner, group_counterfactual=True)
+
+        self.assertEqual(len(runner.requests), 2)
+        self.assertEqual(
+            runner.requests[1].execution_variant,
+            ExecutionVariant.GROUP_ISOLATED_COUNTERFACTUAL,
+        )
+        self.assertEqual(report.counterfactual.status, CounterfactualStatus.COMPARED)  # type: ignore[union-attr]
+        self.assertAlmostEqual(report.counterfactual.metric_delta, -0.2)  # type: ignore[union-attr]
+        counterfactual_evidence = next(
+            item
+            for item in report.evidence
+            if item.id == "evidence.counterfactual.group_isolated"
+        )
+        serialized = json.dumps(counterfactual_evidence.to_dict())
+        self.assertNotIn("customer_id", serialized)
+        self.assertNotIn("row_indices", serialized)
+
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "audit.html"
+            write_html(report, output)
+            rendered = output.read_text(encoding="utf-8")
+        self.assertIn("Group-isolated counterfactual", rendered)
+        self.assertIn("delta", rendered)
+
     def test_execution_failure_is_visible_in_html_report(self) -> None:
         runner = FakeRunner(
             [
@@ -376,7 +433,10 @@ class RunnerOrchestrationTests(unittest.TestCase):
 
     @staticmethod
     def _audit(
-        runner: FakeRunner, *, limits: ResourceLimits | None = None
+        runner: FakeRunner,
+        *,
+        limits: ResourceLimits | None = None,
+        group_counterfactual: bool = False,
     ):
         root = Path(__file__).parents[1]
         return audit_experiment(
@@ -385,10 +445,13 @@ class RunnerOrchestrationTests(unittest.TestCase):
             root / "examples" / "validityci.toml",
             runner=runner,
             limits=limits,
+            group_counterfactual=group_counterfactual,
         )
 
     @staticmethod
-    def _clean_entity_trace(*, overlap_count: int = 0) -> RuntimeTrace:
+    def _clean_entity_trace(
+        *, overlap_count: int = 0, counterfactual_applied: bool = False
+    ) -> RuntimeTrace:
         data = RuntimeDataFingerprint(
             role="input.0",
             fingerprint="hmac-sha256:data",
@@ -407,6 +470,14 @@ class RunnerOrchestrationTests(unittest.TestCase):
                     cell_index=1,
                     inputs=(data,),
                     parameters={
+                        "counterfactual": {
+                            "status": (
+                                "applied"
+                                if counterfactual_applied
+                                else "not_requested"
+                            ),
+                            "kind": "group_isolated_split",
+                        },
                         "entity_overlap": {
                             "status": "measured",
                             "train_unique_count": 15,

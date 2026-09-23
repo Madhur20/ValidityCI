@@ -84,6 +84,8 @@ To prove entity overlap or preprocessing order, the system needs to know which r
 
 Current response: supported runtime events use run-scoped HMAC fingerprints. The secret key exists only inside the temporary kernel, so equal data can be linked within one execution without creating a cross-run identifier. Entity overlap is computed separately inside the kernel when the declared entity data participates in a supported split; only aggregate counts leave the kernel. Transformer-fit inputs are compared with same-run split lineage to identify pre-split, full-data, test-data, or train-only fitting. This reduces offline guessing risk but intentionally prevents direct fingerprint comparison between repeated executions. Any future stable customer-controlled scope still needs an explicit threat model.
 
+Supported cross-validation extends the same model: fold subsets are reconstructed and fingerprinted inside the kernel, while train/test row indices are discarded rather than serialized. Custom iterable splitters, nested CV, and search APIs still need explicit compatibility benchmarks.
+
 ### A metric value lacks meaning without context
 
 `0.90` is not useful evidence unless the report knows the metric, positive class, averaging method, split, sample count, and possibly threshold.
@@ -101,6 +103,6 @@ Future response: add reviewed threshold, subgroup, and averaging semantics witho
 - A baseline comparison view that explains which metric, data, code, environment, or policy changed.
 - An exception workflow with owner, reason, expiration, and linked evidence instead of a permanent “ignore” flag.
 - A benchmark repository with clean, flawed, ambiguous, malicious, and unsupported notebooks.
-- A counterfactual runner that applies a reversible group split and shows the metric delta without modifying the source notebook.
+- Expand the implemented holdout counterfactual beyond `train_test_split`: custom splitters, cross-validation/search APIs, and explicitly modeled stratification semantics.
 - An AI investigator limited to evidence retrieval tools, with every conclusion checked against evidence identifiers.
 - A local compatibility scanner that reports undeclared files and imports before starting an expensive container run.

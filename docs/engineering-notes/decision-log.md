@@ -107,3 +107,21 @@ Supported scikit-learn method events now identify whether the object is a transf
 Supported metric wrappers compute binary `TN`, `FP`, `FN`, and `TP` counts inside the notebook kernel using the manifest's positive class. Only those four counts and the already-declared positive-class value enter the metric artifact. Runtime target and prediction arrays remain inputs to the existing run-scoped fingerprinting path and are not serialized.
 
 **Tradeoff:** Aggregate counts enable class-sensitive review without creating a row-level prediction artifact, but they cannot support threshold analysis, subgroup slicing, or error inspection after execution. Continuous-score, multiclass, ambiguous-label, and manifest-variable cases therefore retain an explicit unsupported reason until a separately reviewed evidence contract exists.
+
+## D-019 — Version finding impact as policy
+
+Severity and confidence are reviewer-impact decisions, not incidental presentation fields. A central catalog now maps each supported check/outcome pair to a stable policy ID, version, severity, confidence, and rationale. Finding producers resolve that catalog rather than choosing enum values locally, and serialized findings retain policy provenance.
+
+**Tradeoff:** Adding a new finding outcome now requires an explicit policy entry and regression expectation before code can emit it. This adds deliberate friction, but prevents different checks—or future AI-generated explanations—from silently assigning inconsistent blocking levels to similar evidence.
+
+## D-020 — Represent cross-validation as ordinary fold-level split events
+
+Supported scikit-learn splitters eventually flow through `BaseCrossValidator.split`. The runner wraps that generator, applies scikit-learn's own safe indexing to reconstruct each yielded train/test subset, and emits the existing split-event contract with `split_kind=cross_validation` and a one-based fold index. Existing entity and preprocessing checks can therefore evaluate every fold without a parallel evidence model.
+
+**Tradeoff:** Reconstructing fold subsets adds hashing work proportional to the number of folds, but avoids exporting row indices and keeps lineage comparable with holdout splits. Custom iterable CV objects and splitters that bypass `BaseCrossValidator.split` remain unsupported until they receive explicit adapters.
+
+## D-021 — Make counterfactuals explicit execution variants
+
+A group-isolated counterfactual is one additional restricted execution whose request and result are labeled `group_isolated_counterfactual`. During that run only, the kernel wrapper replaces supported `train_test_split` calls with `GroupShuffleSplit`, safe-indexes every positional input, and records that the transformation was applied. The observed runs remain unchanged and are the only inputs to reproducibility comparison.
+
+**Tradeoff:** The initial comparison accepts exactly one captured primary-metric call and only the supported holdout adapter. This deliberately abstains on custom splits, cross-validation, or ambiguous metric selection, but prevents an intervention from being confused with an observed repetition and preserves the source notebook unchanged.

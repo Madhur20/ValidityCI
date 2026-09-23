@@ -237,7 +237,7 @@ Exit criteria:
 - every finding contains evidence IDs and affected cells;
 - false positives become permanent regression cases.
 
-### 0.5 — controlled counterfactual
+### 0.5 — controlled counterfactual — initial supported surface completed
 
 Replace a random row split with a configured group-isolated split, rerun downstream work, and compare metrics and partition properties. Never overwrite the source notebook.
 
@@ -545,7 +545,7 @@ Advancement depends on exit criteria, not elapsed weeks.
 
 ### 1. Versioned schemas — completed
 
-The report contract now uses schema version `1.6.0`, immutable slotted models, explicit round-trip serialization, controlled enums, unique identifiers, and evidence-reference validation. Execution records use their own `1.6.0` contract, and runtime traces have an independently versioned `1.3.0` contract.
+The report contract now uses schema version `1.9.0`, immutable slotted models, explicit round-trip serialization, controlled enums, unique identifiers, evidence-reference validation, and versioned finding-policy provenance. Execution records use their own `1.8.0` contract, and runtime traces have an independently versioned `1.5.0` contract.
 
 ### 2. Runner protocol — completed
 
@@ -569,7 +569,7 @@ Split, transform, fit, predict, and metric events record a stable sequence, orig
 
 ### 7. Entity-overlap check — initial supported implementation completed
 
-The runner measures overlap when the configured entity column or named series is passed through supported `train_test_split` instrumentation. It returns only train/test unique counts, overlap count, and test-overlap rate. Confirmed overlap creates a blocking, high-confidence finding; missing lineage is `unsupported` and makes the audit incomplete rather than passing by inference.
+The runner measures overlap when the configured entity column or named series is passed through supported holdout or cross-validation instrumentation. It returns only train/test unique counts, overlap count, test-overlap rate, split kind, and fold identity. Confirmed overlap creates a blocking, high-confidence finding; missing lineage is `unsupported` and makes the audit incomplete rather than passing by inference.
 
 ### 8. Preprocessing-order check — initial supported implementation completed
 
@@ -579,11 +579,19 @@ Transformer-fit events are compared with earlier supported split events and run-
 
 Supported runtime metric calls now retain aggregate true-negative, false-positive, false-negative, and true-positive counts relative to the manifest positive class. One-class evaluation slices are valid binary evidence with zero counts for the absent class; continuous-score, multiclass, and manifest-variable paths preserve an unsupported reason without exposing labels or predictions.
 
-### 10. Group-split counterfactual
+### 10. Severity and confidence policy — initial implementation completed
 
-Create reversible execution lineage and show metric changes without modifying the source notebook.
+A versioned catalog now maps every supported finding outcome to severity, confidence, and a durable policy identifier. Directly confirmed runtime leakage is blocking/high; ambiguous lineage is warning/medium; directly observed but context-dependent metric and reproducibility concerns are warning/high. Unknown outcomes fail closed instead of receiving an ad hoc rating.
 
-### 11. Investigator benchmark before agent code
+### 11. Multiple-split and cross-validation lineage — initial implementation completed
+
+The runner wraps supported `BaseCrossValidator.split` paths and emits one split event per fold using scikit-learn's own safe indexing behavior. Fold number and split kind are retained, while row indices remain inside the kernel. Entity overlap and preprocessing fit scope evaluate every captured fold; clean and intentionally preprocessed-before-CV benchmarks verify both outcomes.
+
+### 12. Group-split counterfactual — initial supported implementation completed
+
+An opt-in extra execution now intercepts supported `train_test_split` calls and applies `GroupShuffleSplit` using the configured entity values inside the kernel. The source notebook remains unchanged; the report labels both executions, records the applied transformation and aggregate overlap, and shows the signed delta between exactly one observed and counterfactual primary-metric call. Unsupported split shapes, absent entity lineage, execution failures, or ambiguous metric calls remain incomplete.
+
+### 13. Investigator benchmark before agent code
 
 Define expected summaries and reviewer questions for at least 10 cases. The future agent must beat the deterministic baseline on usefulness without reducing factual support.
 

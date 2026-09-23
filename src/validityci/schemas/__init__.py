@@ -12,9 +12,9 @@ from typing import Any, TypeAlias, cast
 import tomllib
 
 
-REPORT_SCHEMA_VERSION = "1.6.0"
-EXECUTION_SCHEMA_VERSION = "1.6.0"
-INSTRUMENTATION_SCHEMA_VERSION = "1.3.0"
+REPORT_SCHEMA_VERSION = "1.9.0"
+EXECUTION_SCHEMA_VERSION = "1.8.0"
+INSTRUMENTATION_SCHEMA_VERSION = "1.5.0"
 SUPPORTED_TASKS = frozenset({"binary_classification"})
 SUPPORTED_METRICS = frozenset(
     {"accuracy", "balanced_accuracy", "f1", "precision", "recall", "roc_auc"}
@@ -38,6 +38,11 @@ class ExecutionStatus(StrEnum):
     RUNNER_ERROR = "runner_error"
 
 
+class ExecutionVariant(StrEnum):
+    OBSERVED = "observed"
+    GROUP_ISOLATED_COUNTERFACTUAL = "group_isolated_counterfactual"
+
+
 class MetricCaptureStatus(StrEnum):
     CAPTURED = "captured"
     UNSUPPORTED = "unsupported"
@@ -57,6 +62,11 @@ class ConfusionMatrixStatus(StrEnum):
 class ReproducibilityStatus(StrEnum):
     REPRODUCED = "reproduced"
     DIVERGED = "diverged"
+    INCOMPLETE = "incomplete"
+
+
+class CounterfactualStatus(StrEnum):
+    COMPARED = "compared"
     INCOMPLETE = "incomplete"
 
 
@@ -394,6 +404,8 @@ class Evidence:
 class Finding:
     id: str
     check_id: str
+    policy_id: str
+    policy_version: str
     title: str
     severity: Severity
     confidence: Confidence
@@ -404,6 +416,8 @@ class Finding:
     def __post_init__(self) -> None:
         _require_identifier("finding id", self.id)
         _require_identifier("check_id", self.check_id)
+        _require_identifier("finding policy_id", self.policy_id)
+        _require_identifier("finding policy_version", self.policy_version)
         _require_non_empty("finding title", self.title)
         _require_non_empty("finding summary", self.summary)
         _require_non_empty("recommendation", self.recommendation)
@@ -419,12 +433,14 @@ class Finding:
     def from_dict(cls, raw: Mapping[str, Any]) -> "Finding":
         _reject_unknown(
             raw,
-            {"id", "check_id", "title", "severity", "confidence", "summary", "evidence_ids", "recommendation"},
+            {"id", "check_id", "policy_id", "policy_version", "title", "severity", "confidence", "summary", "evidence_ids", "recommendation"},
             "finding",
         )
         return cls(
             id=_string(raw, "id"),
             check_id=_string(raw, "check_id"),
+            policy_id=_string(raw, "policy_id"),
+            policy_version=_string(raw, "policy_version"),
             title=_string(raw, "title"),
             severity=_enum_value(Severity, _string(raw, "severity"), "severity"),
             confidence=_enum_value(Confidence, _string(raw, "confidence"), "confidence"),
@@ -437,6 +453,8 @@ class Finding:
         return {
             "id": self.id,
             "check_id": self.check_id,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
             "title": self.title,
             "severity": self.severity.value,
             "confidence": self.confidence.value,
@@ -970,6 +988,8 @@ class ExecutionRequest:
     metric_selector: MetricSelector | None = None
     entity_column: str | None = None
     positive_class: str | None = None
+    random_seed: int = 42
+    execution_variant: ExecutionVariant = ExecutionVariant.OBSERVED
     limits: ResourceLimits = field(default_factory=ResourceLimits)
     network_enabled: bool = False
     schema_version: str = EXECUTION_SCHEMA_VERSION
@@ -999,6 +1019,14 @@ class ExecutionRequest:
             _require_non_empty("entity_column", self.entity_column)
         if self.positive_class is not None:
             _require_non_empty("positive_class", self.positive_class)
+        _strict_int(self.random_seed, "random_seed")
+        object.__setattr__(
+            self,
+            "execution_variant",
+            _enum_value(
+                ExecutionVariant, self.execution_variant, "execution variant"
+            ),
+        )
         if not isinstance(self.network_enabled, bool):
             raise TypeError("network_enabled must be a boolean")
 
@@ -1015,6 +1043,8 @@ class ExecutionRequest:
                 "metric_selector",
                 "entity_column",
                 "positive_class",
+                "random_seed",
+                "execution_variant",
                 "limits",
                 "network_enabled",
             },
@@ -1042,6 +1072,12 @@ class ExecutionRequest:
             ),
             entity_column=_optional_string(raw.get("entity_column")),
             positive_class=_optional_string(raw.get("positive_class")),
+            random_seed=_integer(raw, "random_seed"),
+            execution_variant=_enum_value(
+                ExecutionVariant,
+                _string(raw, "execution_variant"),
+                "execution variant",
+            ),
             limits=ResourceLimits.from_dict(
                 _mapping(_required(raw, "limits"), "resource limits")
             ),
@@ -1060,6 +1096,8 @@ class ExecutionRequest:
             ),
             "entity_column": self.entity_column,
             "positive_class": self.positive_class,
+            "random_seed": self.random_seed,
+            "execution_variant": self.execution_variant.value,
             "limits": self.limits.to_dict(),
             "network_enabled": self.network_enabled,
         }
@@ -1165,6 +1203,7 @@ class ExecutionResult:
     metrics: tuple[MetricArtifact, ...] = ()
     environment: EnvironmentFingerprint | None = None
     runtime_trace: RuntimeTrace | None = None
+    execution_variant: ExecutionVariant = ExecutionVariant.OBSERVED
     schema_version: str = EXECUTION_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -1176,6 +1215,13 @@ class ExecutionResult:
         _require_identifier("execution id", self.execution_id)
         object.__setattr__(
             self, "status", _enum_value(ExecutionStatus, self.status, "execution status")
+        )
+        object.__setattr__(
+            self,
+            "execution_variant",
+            _enum_value(
+                ExecutionVariant, self.execution_variant, "execution variant"
+            ),
         )
         _strict_int(self.duration_ms, "duration_ms")
         if self.duration_ms < 0:
@@ -1220,6 +1266,7 @@ class ExecutionResult:
                 "metrics",
                 "environment",
                 "runtime_trace",
+                "execution_variant",
             },
             "execution result",
         )
@@ -1255,6 +1302,11 @@ class ExecutionResult:
                 if runtime_trace is None
                 else RuntimeTrace.from_dict(_mapping(runtime_trace, "runtime trace"))
             ),
+            execution_variant=_enum_value(
+                ExecutionVariant,
+                _string(raw, "execution_variant"),
+                "execution variant",
+            ),
         )
 
     def to_dict(self) -> JsonObject:
@@ -1272,6 +1324,7 @@ class ExecutionResult:
             "runtime_trace": (
                 None if self.runtime_trace is None else self.runtime_trace.to_dict()
             ),
+            "execution_variant": self.execution_variant.value,
         }
 
 
@@ -1410,6 +1463,135 @@ class ReproducibilityComparison:
 
 
 @dataclass(frozen=True, slots=True)
+class CounterfactualComparison:
+    status: CounterfactualStatus
+    baseline_execution_id: str
+    counterfactual_execution_id: str
+    primary_metric: str
+    transformation_count: int
+    baseline_metric_value: float | None = None
+    counterfactual_metric_value: float | None = None
+    metric_delta: float | None = None
+    reason: str | None = None
+    kind: str = "group_isolated_split"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "status",
+            _enum_value(CounterfactualStatus, self.status, "counterfactual status"),
+        )
+        _require_identifier("baseline execution id", self.baseline_execution_id)
+        _require_identifier(
+            "counterfactual execution id", self.counterfactual_execution_id
+        )
+        if self.baseline_execution_id == self.counterfactual_execution_id:
+            raise ValueError("Counterfactual comparison requires distinct executions")
+        if self.primary_metric not in SUPPORTED_METRICS:
+            raise ValueError(f"Unsupported counterfactual metric: {self.primary_metric}")
+        _require_identifier("counterfactual kind", self.kind)
+        _strict_int(self.transformation_count, "counterfactual transformation_count")
+        if self.transformation_count < 0:
+            raise ValueError("counterfactual transformation_count cannot be negative")
+        for name in (
+            "baseline_metric_value",
+            "counterfactual_metric_value",
+            "metric_delta",
+        ):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{name} must be numeric or null")
+            normalized = float(value)
+            if not math.isfinite(normalized):
+                raise ValueError(f"{name} must be finite")
+            object.__setattr__(self, name, normalized)
+        if self.status is CounterfactualStatus.COMPARED:
+            if (
+                self.transformation_count < 1
+                or self.baseline_metric_value is None
+                or self.counterfactual_metric_value is None
+                or self.metric_delta is None
+                or self.reason is not None
+            ):
+                raise ValueError(
+                    "Compared counterfactuals require a transformation and metric values"
+                )
+            expected_delta = (
+                self.counterfactual_metric_value - self.baseline_metric_value
+            )
+            if not math.isclose(
+                self.metric_delta, expected_delta, rel_tol=0.0, abs_tol=1e-12
+            ):
+                raise ValueError("counterfactual metric_delta does not match values")
+        else:
+            if self.reason is None:
+                raise ValueError("Incomplete counterfactuals require a reason")
+            _require_non_empty("counterfactual reason", self.reason)
+            if self.metric_delta is not None:
+                raise ValueError(
+                    "Incomplete counterfactuals cannot contain a metric_delta"
+                )
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "CounterfactualComparison":
+        fields = {
+            "status",
+            "baseline_execution_id",
+            "counterfactual_execution_id",
+            "primary_metric",
+            "transformation_count",
+            "baseline_metric_value",
+            "counterfactual_metric_value",
+            "metric_delta",
+            "reason",
+            "kind",
+        }
+        _reject_unknown(raw, fields, "counterfactual comparison")
+        numeric: dict[str, float | None] = {}
+        for name in (
+            "baseline_metric_value",
+            "counterfactual_metric_value",
+            "metric_delta",
+        ):
+            value = raw.get(name)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, (int, float))
+            ):
+                raise TypeError(f"{name} must be numeric or null")
+            numeric[name] = None if value is None else float(value)
+        return cls(
+            status=_enum_value(
+                CounterfactualStatus,
+                _string(raw, "status"),
+                "counterfactual status",
+            ),
+            baseline_execution_id=_string(raw, "baseline_execution_id"),
+            counterfactual_execution_id=_string(raw, "counterfactual_execution_id"),
+            primary_metric=_string(raw, "primary_metric"),
+            transformation_count=_integer(raw, "transformation_count"),
+            reason=_optional_string(raw.get("reason")),
+            kind=_string(raw, "kind"),
+            **numeric,
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "status": self.status.value,
+            "baseline_execution_id": self.baseline_execution_id,
+            "counterfactual_execution_id": self.counterfactual_execution_id,
+            "primary_metric": self.primary_metric,
+            "transformation_count": self.transformation_count,
+            "baseline_metric_value": self.baseline_metric_value,
+            "counterfactual_metric_value": self.counterfactual_metric_value,
+            "metric_delta": self.metric_delta,
+            "reason": self.reason,
+            "kind": self.kind,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class AuditReport:
     status: AuditStatus
     config: ExperimentConfig
@@ -1420,6 +1602,7 @@ class AuditReport:
     checks: tuple[CheckResult, ...] = ()
     executions: tuple[ExecutionResult, ...] = ()
     reproducibility: ReproducibilityComparison | None = None
+    counterfactual: CounterfactualComparison | None = None
     schema_version: str = REPORT_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -1449,6 +1632,35 @@ class AuditReport:
             if not compared_ids.issubset(set(execution_ids)):
                 raise ValueError(
                     "Reproducibility comparison references missing executions"
+                )
+        if self.counterfactual is not None:
+            if not isinstance(self.counterfactual, CounterfactualComparison):
+                raise TypeError("counterfactual must be CounterfactualComparison")
+            compared_ids = {
+                self.counterfactual.baseline_execution_id,
+                self.counterfactual.counterfactual_execution_id,
+            }
+            if not compared_ids.issubset(set(execution_ids)):
+                raise ValueError(
+                    "Counterfactual comparison references missing executions"
+                )
+            executions_by_id = {
+                execution.execution_id: execution for execution in self.executions
+            }
+            baseline = executions_by_id[self.counterfactual.baseline_execution_id]
+            comparison = executions_by_id[
+                self.counterfactual.counterfactual_execution_id
+            ]
+            if baseline.execution_variant is not ExecutionVariant.OBSERVED:
+                raise ValueError(
+                    "Counterfactual baseline must reference an observed execution"
+                )
+            if (
+                comparison.execution_variant
+                is not ExecutionVariant.GROUP_ISOLATED_COUNTERFACTUAL
+            ):
+                raise ValueError(
+                    "Counterfactual comparison must reference a group-isolated execution"
                 )
         known = set(evidence_ids)
         missing = sorted(
@@ -1495,6 +1707,10 @@ class AuditReport:
             self.reproducibility is not None
             and self.reproducibility.status is ReproducibilityStatus.INCOMPLETE
         )
+        counterfactual_incomplete = (
+            self.counterfactual is not None
+            and self.counterfactual.status is CounterfactualStatus.INCOMPLETE
+        )
         comparison_diverged = (
             self.reproducibility is not None
             and self.reproducibility.status is ReproducibilityStatus.DIVERGED
@@ -1507,6 +1723,7 @@ class AuditReport:
             execution_failed
             or metric_capture_incomplete
             or comparison_incomplete
+            or counterfactual_incomplete
             or check_incomplete
         )
         if audit_incomplete and self.status is not AuditStatus.INCOMPLETE:
@@ -1546,10 +1763,12 @@ class AuditReport:
                 "checks",
                 "executions",
                 "reproducibility",
+                "counterfactual",
             },
             "audit report",
         )
         reproducibility = raw.get("reproducibility")
+        counterfactual = raw.get("counterfactual")
         return cls(
             schema_version=_string(raw, "schema_version"),
             status=_enum_value(AuditStatus, _string(raw, "status"), "audit status"),
@@ -1573,6 +1792,13 @@ class AuditReport:
                     _mapping(reproducibility, "reproducibility comparison")
                 )
             ),
+            counterfactual=(
+                None
+                if counterfactual is None
+                else CounterfactualComparison.from_dict(
+                    _mapping(counterfactual, "counterfactual comparison")
+                )
+            ),
         )
 
     def to_dict(self) -> JsonObject:
@@ -1590,6 +1816,11 @@ class AuditReport:
                 None
                 if self.reproducibility is None
                 else self.reproducibility.to_dict()
+            ),
+            "counterfactual": (
+                None
+                if self.counterfactual is None
+                else self.counterfactual.to_dict()
             ),
         }
 
@@ -1773,9 +2004,13 @@ __all__ = [
     "REPORT_SCHEMA_VERSION",
     "AuditReport",
     "AuditStatus",
+    "BinaryConfusionMatrix",
     "CheckResult",
     "CheckStatus",
+    "ConfusionMatrixStatus",
     "Confidence",
+    "CounterfactualComparison",
+    "CounterfactualStatus",
     "DatasetProfile",
     "Evidence",
     "EnvironmentFingerprint",
@@ -1784,6 +2019,7 @@ __all__ = [
     "ExecutionRequest",
     "ExecutionResult",
     "ExecutionStatus",
+    "ExecutionVariant",
     "Finding",
     "MetricArtifact",
     "MetricCaptureMethod",

@@ -19,7 +19,7 @@ from validityci.schemas import (
 )
 
 
-DEFAULT_RUNNER_IMAGE = "validityci-runner:0.4.2"
+DEFAULT_RUNNER_IMAGE = "validityci-runner:0.6.0"
 _CONTAINER_INPUT = "/workspace/input"
 _CONTAINER_OUTPUT = "/workspace/output"
 
@@ -94,6 +94,7 @@ class DockerRunner:
                                 f"{request.limits.timeout_seconds} seconds"
                             ),
                         ),
+                        execution_variant=request.execution_variant,
                     )
                 except OSError as error:
                     return self._runner_error(
@@ -139,6 +140,13 @@ class DockerRunner:
                         started,
                         "execution_id_mismatch",
                         "The container returned a result for another execution",
+                    )
+                if result.execution_variant is not request.execution_variant:
+                    return self._runner_error(
+                        request,
+                        started,
+                        "execution_variant_mismatch",
+                        "The container returned a different execution variant",
                     )
                 return result
         finally:
@@ -229,6 +237,10 @@ class DockerRunner:
             str(limits.timeout_seconds),
             "--max-output-bytes",
             str(limits.max_output_bytes),
+            "--execution-variant",
+            request.execution_variant.value,
+            "--random-seed",
+            str(request.random_seed),
         ]
         if request.metric_selector is not None:
             command.extend(
@@ -278,6 +290,7 @@ class DockerRunner:
             status=ExecutionStatus.RUNNER_ERROR,
             duration_ms=cls._duration_ms(started),
             failure=ExecutionFailure(kind=kind, message=message),
+            execution_variant=request.execution_variant,
         )
 
     @staticmethod

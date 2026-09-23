@@ -91,6 +91,34 @@ class RuntimeInstrumentationSchemaTests(unittest.TestCase):
                 cell_index=0,
             )
 
+    def test_cross_validation_fold_round_trips_without_row_indices(self) -> None:
+        event = RuntimeEvent(
+            id="runtime.1",
+            sequence=1,
+            event_type=RuntimeEventType.SPLIT,
+            operation="sklearn.model_selection._split.GroupKFold.split",
+            cell_index=1,
+            inputs=(self._fingerprint("input.0", 20, 2),),
+            outputs=(
+                self._fingerprint("output.0", 10, 2),
+                self._fingerprint("output.1", 10, 2),
+            ),
+            parameters={
+                "split_kind": "cross_validation",
+                "fold_index": 1,
+                "parallel_execution": False,
+            },
+        )
+
+        restored = RuntimeEvent.from_dict(
+            json.loads(json.dumps(event.to_dict()))
+        )
+
+        self.assertEqual(restored, event)
+        serialized = json.dumps(restored.to_dict())
+        self.assertNotIn("train_indices", serialized)
+        self.assertNotIn("test_indices", serialized)
+
     @staticmethod
     def _fingerprint(
         role: str, rows: int, columns: int | None

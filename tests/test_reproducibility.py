@@ -204,11 +204,14 @@ class RepeatedAuditTests(unittest.TestCase):
 
         self.assertEqual(report.status, AuditStatus.ATTENTION_REQUIRED)
         self.assertEqual(report.reproducibility.status, ReproducibilityStatus.DIVERGED)  # type: ignore[union-attr]
-        self.assertTrue(
-            any(
-                finding.check_id == "reproducibility.repeated_execution"
-                for finding in report.findings
-            )
+        reproducibility_finding = next(
+            finding
+            for finding in report.findings
+            if finding.check_id == "reproducibility.repeated_execution"
+        )
+        self.assertEqual(
+            reproducibility_finding.policy_id,
+            "policy.reproducibility_divergence",
         )
         self.assertEqual(
             [request.execution_id for request in runner.requests],

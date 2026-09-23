@@ -13,6 +13,8 @@ This repository contains a static audit and an opt-in restricted notebook runner
 - Metric-suitability check
 - Runtime entity-overlap check for supported splits
 - Runtime preprocessing-fit-scope check for supported transformers
+- Fold-level lineage for supported in-process scikit-learn cross-validation
+- Optional group-isolated counterfactual execution with signed metric delta
 - Local execution with no paid services or model API
 - Optional execution in a restricted Docker container
 
@@ -42,7 +44,7 @@ The example intentionally declares `accuracy` as its primary metric for an imbal
 Build the pinned runner environment once:
 
 ```bash
-docker build -f docker/runner/Dockerfile -t validityci-runner:0.4.2 .
+docker build -f docker/runner/Dockerfile -t validityci-runner:0.6.0 .
 ```
 
 Then opt in to execution:
@@ -66,11 +68,17 @@ For supported scikit-learn metrics, an execution record includes the metric name
 
 Each successful run also records an aggregate environment fingerprint derived from the Python runtime, operating system, machine architecture, runner code, and installed package names and versions. Reports preserve the three comparison signals separately: equal metrics do not hide changed notebook outputs, and equal outputs do not hide an environment change.
 
-The `0.4.2` runner includes a separately versioned runtime trace for supported scikit-learn train/test splits, estimator and transformer fitting, transformations, predictions, and metric calls. Every event points to the original notebook cell and includes only operation metadata, shapes, object classification, and run-scoped HMAC fingerprints. Raw data values and the fingerprint key are never written to the execution result.
+The `0.6.0` runner includes a separately versioned runtime trace for supported scikit-learn train/test splits, cross-validation folds, estimator and transformer fitting, transformations, predictions, and metric calls. Every event points to the original notebook cell and includes only operation metadata, shapes, fold identity, object classification, and run-scoped HMAC fingerprints. Raw data values, fold indices, and the fingerprint key are never written to the execution result.
 
 When `entity_column` is configured and that column or named series is passed to `train_test_split`, the runner computes aggregate train/test entity overlap inside the kernel. A confirmed overlap produces a blocking, high-confidence finding; reports contain only unique counts, overlap count, and overlap rate—not entity values or entity-level hashes.
 
 The preprocessing-fit-scope check compares supported transformer fits with earlier split lineage. Fitting before a split, on the full pre-split dataset, or on the held-out test partition produces a blocking, high-confidence finding; ambiguous or missing lineage is reported as `review` or `unsupported`, never silently passed.
+
+Supported scikit-learn cross-validation splitters emit one privacy-minimized split event per fold. Group isolation and preprocessing scope are evaluated for every fold, so a clean early fold cannot hide overlap or leakage in a later fold.
+
+Finding severity and confidence come from a versioned deterministic policy catalog. Every serialized finding includes its policy ID and version, so reviewer impact is traceable and cannot be improvised independently by each check.
+
+Add `--group-counterfactual` to an executed audit to run one extra, explicitly labeled execution in which a supported `train_test_split` is replaced in memory by `GroupShuffleSplit` using the configured entity column. The source notebook is unchanged, reproducibility still compares only observed runs, and the report shows the observed value, group-isolated value, signed delta, transformation count, and aggregate overlap evidence. The initial adapter requires exactly one captured primary-metric call and does not apply to cross-validation or custom split functions.
 
 ## Run the tests
 

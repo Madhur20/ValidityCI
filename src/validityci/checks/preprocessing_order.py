@@ -2,17 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from validityci.policy import resolve_finding_policy
 from validityci.schemas import (
     CheckResult,
     CheckStatus,
-    Confidence,
     Evidence,
     ExecutionResult,
     ExecutionStatus,
     Finding,
     RuntimeEvent,
     RuntimeEventType,
-    Severity,
 )
 
 
@@ -67,6 +66,21 @@ def run_preprocessing_order_check(
                 f"{execution.execution_id} contained fit events without object-kind metadata."
             )
 
+        split_events = tuple(
+            event
+            for event in trace.events
+            if event.event_type is RuntimeEventType.SPLIT
+        )
+        if any(
+            event.parameters.get("split_kind") == "cross_validation"
+            and event.parameters.get("parallel_execution") is True
+            for event in split_events
+        ):
+            unsupported_reasons.append(
+                f"{execution.execution_id} used parallel cross-validation; "
+                "worker-side transformer events were not observable."
+            )
+
         transformer_fits = tuple(
             event
             for event in fit_candidates
@@ -75,11 +89,6 @@ def run_preprocessing_order_check(
         if not transformer_fits:
             continue
         observed_transformer_fit = observed_transformer_fit or bool(transformer_fits)
-        split_events = tuple(
-            event
-            for event in trace.events
-            if event.event_type is RuntimeEventType.SPLIT
-        )
         if not split_events:
             unsupported_reasons.append(
                 f"{execution.execution_id} contained no supported train/test split."
@@ -134,12 +143,15 @@ def run_preprocessing_order_check(
             "fit_on_full_data": "on the full pre-split dataset",
             "fit_on_test_data": "on the held-out test partition",
         }[first["outcome"]]
+        policy = resolve_finding_policy(CHECK_ID, "confirmed_leakage")
         finding = Finding(
             id="finding.preprocessing_fit_scope",
             check_id=CHECK_ID,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
             title="Preprocessing was fitted outside the training partition",
-            severity=Severity.BLOCKING,
-            confidence=Confidence.HIGH,
+            severity=policy.severity,
+            confidence=policy.confidence,
             summary=f"{first['operation']} was fitted {reason}.",
             evidence_ids=(evidence.id,),
             recommendation=(
@@ -158,12 +170,15 @@ def run_preprocessing_order_check(
             (finding,),
         )
     if reviews:
+        policy = resolve_finding_policy(CHECK_ID, "unverified_fit_scope")
         finding = Finding(
             id="finding.preprocessing_fit_scope_review",
             check_id=CHECK_ID,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
             title="Preprocessing fit scope could not be established",
-            severity=Severity.WARNING,
-            confidence=Confidence.MEDIUM,
+            severity=policy.severity,
+            confidence=policy.confidence,
             summary=(
                 "A supported transformer fit was observed after splitting, but its "
                 "input did not match a captured training, test, or full dataset."
@@ -250,11 +265,15 @@ def _classify_fit(
             **observation,
             "outcome": outcome,
             "split_event_id": split_event.id,
+            "split_kind": split_event.parameters.get("split_kind", "holdout"),
+            "fold_index": split_event.parameters.get("fold_index"),
         }
     return {
         **observation,
         "outcome": "unverified_fit_scope",
         "split_event_id": prior_splits[-1].id,
+        "split_kind": prior_splits[-1].parameters.get("split_kind", "holdout"),
+        "fold_index": prior_splits[-1].parameters.get("fold_index"),
     }
 
 

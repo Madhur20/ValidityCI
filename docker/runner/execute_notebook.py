@@ -16,8 +16,8 @@ from nbclient import NotebookClient
 from nbclient.exceptions import CellExecutionError, CellTimeoutError
 
 
-SCHEMA_VERSION = "1.6.0"
-INSTRUMENTATION_SCHEMA_VERSION = "1.3.0"
+SCHEMA_VERSION = "1.8.0"
+INSTRUMENTATION_SCHEMA_VERSION = "1.5.0"
 _COLLECTOR_MARKER = "__VALIDITYCI_RUNTIME_V1__"
 _SUPPORTED_METRIC_FUNCTIONS = {
     "accuracy": "accuracy_score",
@@ -40,6 +40,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--metric-variable")
     parser.add_argument("--entity-column")
     parser.add_argument("--positive-class")
+    parser.add_argument("--random-seed", required=True, type=int)
+    parser.add_argument(
+        "--execution-variant",
+        choices=("observed", "group_isolated_counterfactual"),
+        default="observed",
+    )
     return parser
 
 
@@ -49,6 +55,7 @@ def _failure(
     duration_ms: int,
     kind: str,
     message: str,
+    execution_variant: str,
     cell_index: int | None = None,
 ) -> dict[str, Any]:
     return {
@@ -61,6 +68,7 @@ def _failure(
         "metrics": [],
         "environment": None,
         "runtime_trace": None,
+        "execution_variant": execution_variant,
     }
 
 
@@ -97,7 +105,10 @@ def _environment_fingerprint() -> dict[str, str]:
 
 
 def _instrumentation_source(
-    entity_column: str | None, positive_class: str | None
+    entity_column: str | None,
+    positive_class: str | None,
+    execution_variant: str,
+    random_seed: int,
 ) -> str:
     metric_functions = repr(_SUPPORTED_METRIC_FUNCTIONS)
     return f"""
@@ -113,6 +124,9 @@ import scipy.sparse as __validityci_sparse
 import sklearn.base as __validityci_sklearn_base
 import sklearn.metrics as __validityci_sklearn_metrics
 import sklearn.model_selection as __validityci_model_selection
+import sklearn.model_selection._split as __validityci_sklearn_split
+import sklearn.model_selection._validation as __validityci_sklearn_validation
+from sklearn.utils import _safe_indexing as __validityci_safe_indexing
 
 __validityci_metric_events__ = []
 __validityci_runtime_events__ = []
@@ -121,6 +135,9 @@ __validityci_fingerprint_scope_id__ = "scope." + __validityci_secrets.token_hex(
 __validityci_metric_functions__ = {metric_functions}
 __validityci_entity_column__ = {entity_column!r}
 __validityci_positive_class__ = {positive_class!r}
+__validityci_execution_variant__ = {execution_variant!r}
+__validityci_random_seed__ = {random_seed!r}
+__validityci_parallel_cv__ = False
 __validityci_safe_parameters__ = {{
     "average", "pos_label", "zero_division", "multi_class", "max_fpr"
 }}
@@ -410,13 +427,71 @@ for __validityci_name, __validityci_function_name in __validityci_metric_functio
 __validityci_original_train_test_split__ = __validityci_model_selection.train_test_split
 @__validityci_functools.wraps(__validityci_original_train_test_split__)
 def __validityci_train_test_split(*args, **kwargs):
-    result = __validityci_original_train_test_split__(*args, **kwargs)
+    counterfactual = {{"status": "not_requested", "kind": "group_isolated_split"}}
+    if __validityci_execution_variant__ == "group_isolated_counterfactual":
+        entity_values = None
+        for value in args:
+            if (
+                isinstance(value, __validityci_pandas.DataFrame)
+                and __validityci_entity_column__ in value.columns
+            ):
+                entity_values = value[__validityci_entity_column__]
+                break
+            if (
+                isinstance(value, __validityci_pandas.Series)
+                and value.name == __validityci_entity_column__
+            ):
+                entity_values = value
+                break
+        if entity_values is None:
+            raise ValueError(
+                "Group-isolated counterfactual requires the configured entity "
+                "column or named series in train_test_split"
+            )
+        test_size = kwargs.get("test_size")
+        train_size = kwargs.get("train_size")
+        if test_size is None and train_size is None:
+            test_size = 0.25
+        notebook_random_state = kwargs.get("random_state")
+        effective_random_state = (
+            notebook_random_state
+            if notebook_random_state is not None
+            else __validityci_random_seed__
+        )
+        splitter = __validityci_model_selection.GroupShuffleSplit(
+            n_splits=1,
+            test_size=test_size,
+            train_size=train_size,
+            random_state=effective_random_state,
+        )
+        train_indices, test_indices = next(
+            splitter.split(args[0], groups=entity_values)
+        )
+        result = []
+        for value in args:
+            result.extend((
+                __validityci_safe_indexing(value, train_indices),
+                __validityci_safe_indexing(value, test_indices),
+            ))
+        counterfactual = {{
+            "status": "applied",
+            "kind": "group_isolated_split",
+            "random_state_source": (
+                "notebook" if notebook_random_state is not None else "manifest"
+            ),
+        }}
+        if notebook_random_state is None:
+            counterfactual["random_seed"] = __validityci_random_seed__
+    else:
+        result = __validityci_original_train_test_split__(*args, **kwargs)
     safe_parameters = {{
         key: value
         for key, value in kwargs.items()
         if key in {{"test_size", "train_size", "shuffle", "random_state"}}
         and (value is None or isinstance(value, (str, bool, int, float)))
     }}
+    safe_parameters["split_kind"] = "holdout"
+    safe_parameters["counterfactual"] = counterfactual
     safe_parameters["entity_overlap"] = __validityci_entity_overlap(args, result)
     __validityci_record_event(
         "split", "sklearn.model_selection.train_test_split", args, result,
@@ -424,6 +499,51 @@ def __validityci_train_test_split(*args, **kwargs):
     )
     return result
 __validityci_model_selection.train_test_split = __validityci_train_test_split
+
+__validityci_original_cross_validate__ = __validityci_sklearn_validation.cross_validate
+@__validityci_functools.wraps(__validityci_original_cross_validate__)
+def __validityci_cross_validate(*args, **kwargs):
+    global __validityci_parallel_cv__
+    previous = __validityci_parallel_cv__
+    n_jobs = kwargs.get("n_jobs")
+    __validityci_parallel_cv__ = n_jobs not in (None, 1)
+    try:
+        return __validityci_original_cross_validate__(*args, **kwargs)
+    finally:
+        __validityci_parallel_cv__ = previous
+__validityci_sklearn_validation.cross_validate = __validityci_cross_validate
+__validityci_model_selection.cross_validate = __validityci_cross_validate
+
+__validityci_original_cv_split__ = __validityci_sklearn_split.BaseCrossValidator.split
+def __validityci_cross_validator_split(self, X, y=None, groups=None):
+    fold_index = 0
+    for train_indices, test_indices in __validityci_original_cv_split__(
+        self, X, y, groups
+    ):
+        fold_index += 1
+        split_inputs = tuple(
+            value for value in (X, y, groups) if value is not None
+        )
+        split_outputs = []
+        for value in split_inputs:
+            split_outputs.extend((
+                __validityci_safe_indexing(value, train_indices),
+                __validityci_safe_indexing(value, test_indices),
+            ))
+        parameters = {{
+            "split_kind": "cross_validation",
+            "fold_index": fold_index,
+            "parallel_execution": __validityci_parallel_cv__,
+            "entity_overlap": __validityci_entity_overlap(
+                split_inputs, tuple(split_outputs)
+            ),
+        }}
+        operation = type(self).__module__ + "." + type(self).__qualname__ + ".split"
+        __validityci_record_event(
+            "split", operation, split_inputs, tuple(split_outputs), parameters
+        )
+        yield train_indices, test_indices
+__validityci_sklearn_split.BaseCrossValidator.split = __validityci_cross_validator_split
 
 __validityci_original_getattribute__ = __validityci_sklearn_base.BaseEstimator.__getattribute__
 def __validityci_estimator_getattribute(self, name):
@@ -519,11 +639,15 @@ def _prepare_notebook(
     variable_name: str | None,
     entity_column: str | None,
     positive_class: str | None,
+    execution_variant: str,
+    random_seed: int,
 ) -> list[Any]:
     original_cells = list(notebook.cells)
     execution_cells = [
         nbformat.v4.new_code_cell(
-            _instrumentation_source(entity_column, positive_class)
+            _instrumentation_source(
+                entity_column, positive_class, execution_variant, random_seed
+            )
         )
     ]
     for index, cell in enumerate(original_cells):
@@ -632,6 +756,8 @@ def main() -> None:
             args.metric_variable,
             args.entity_column,
             args.positive_class,
+            args.execution_variant,
+            args.random_seed,
         )
         client = NotebookClient(
             notebook,
@@ -653,6 +779,7 @@ def main() -> None:
             "metrics": metrics,
             "environment": _environment_fingerprint(),
             "runtime_trace": runtime_trace,
+            "execution_variant": args.execution_variant,
         }
     except CellExecutionError:
         cell_index, message = _cell_error(original_cells)
@@ -662,6 +789,7 @@ def main() -> None:
             round((time.monotonic() - started) * 1000),
             "notebook_cell_error",
             message,
+            args.execution_variant,
             cell_index,
         )
     except CellTimeoutError as error:
@@ -671,6 +799,7 @@ def main() -> None:
             round((time.monotonic() - started) * 1000),
             "cell_timeout",
             str(error) or "Notebook cell exceeded its timeout",
+            args.execution_variant,
         )
     except Exception as error:
         result = _failure(
@@ -679,6 +808,7 @@ def main() -> None:
             round((time.monotonic() - started) * 1000),
             "notebook_execution_error",
             f"{type(error).__name__}: {error}",
+            args.execution_variant,
         )
 
     serialized = json.dumps(result, sort_keys=True).encode("utf-8")
@@ -689,6 +819,7 @@ def main() -> None:
             round((time.monotonic() - started) * 1000),
             "output_limit",
             "The execution result exceeded the configured output limit",
+            args.execution_variant,
         )
         serialized = json.dumps(result, sort_keys=True).encode("utf-8")
     args.output.write_bytes(serialized)

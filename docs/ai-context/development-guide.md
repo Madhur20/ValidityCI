@@ -25,7 +25,7 @@ git diff --check
 Build the pinned runner:
 
 ```bash
-docker build -f docker/runner/Dockerfile -t validityci-runner:0.4.2 .
+docker build -f docker/runner/Dockerfile -t validityci-runner:0.6.0 .
 ```
 
 Exercise every supported runtime event:
@@ -39,6 +39,28 @@ PYTHONPATH=src python3 -m validityci audit examples/runtime_instrumentation.ipyn
   --html /tmp/validityci-runtime.html
 ```
 
+Exercise fold-level lineage:
+
+```bash
+PYTHONPATH=src python3 -m validityci audit examples/cross_validation.ipynb \
+  --data examples/customer_churn.csv \
+  --config examples/validityci.toml \
+  --execute --runs 1 \
+  --output /tmp/validityci-cross-validation.json \
+  --html /tmp/validityci-cross-validation.html
+```
+
+Exercise the group-isolated counterfactual:
+
+```bash
+PYTHONPATH=src python3 -m validityci audit examples/entity_overlap.ipynb \
+  --data examples/entity_overlap.csv \
+  --config examples/validityci.toml \
+  --execute --runs 1 --group-counterfactual \
+  --output /tmp/validityci-counterfactual.json \
+  --html /tmp/validityci-counterfactual.html
+```
+
 Use explicit `/tmp` paths for smoke-test reports so existing ignored files under `build/` are not overwritten.
 
 ## Test map
@@ -48,11 +70,13 @@ Use explicit `/tmp` paths for smoke-test reports so existing ignored files under
 | `tests/test_audit.py` | Configuration, static audit, report invariants, evidence references, and JSON/HTML basics. |
 | `tests/test_runner.py` | Execution schemas, fake runner behavior, orchestration statuses, metrics, and execution reporting. |
 | `tests/test_docker_runner.py` | Input staging, Docker security flags, timeout cleanup, and structured host-side errors. |
-| `tests/test_entity_overlap.py` | Entity-overlap outcomes, privacy-minimized evidence, unsupported behavior, and check-result contracts. |
+| `tests/test_entity_overlap.py` | Holdout and cross-validation entity-overlap outcomes, privacy-minimized evidence, unsupported behavior, and check-result contracts. |
 | `tests/test_confusion_matrix.py` | Confusion-matrix schema invariants, round trips, unsupported states, and absence of target/prediction arrays. |
-| `tests/test_preprocessing_order.py` | Transformer fit-scope outcomes, ambiguous/unsupported lineage, repeated executions, and privacy-minimized evidence. |
+| `tests/test_counterfactual.py` | Counterfactual lineage, transformation requirements, single-metric boundary, signed delta, and schema invariants. |
+| `tests/test_preprocessing_order.py` | Holdout and per-fold transformer fit scope, parallel-CV abstention, ambiguous lineage, repeated executions, and privacy-minimized evidence. |
+| `tests/test_policy.py` | Complete policy catalog, expected severity/confidence mappings, stable IDs, and unknown-outcome rejection. |
 | `tests/test_reproducibility.py` | Metric/output/environment comparison and audit findings for divergence. |
-| `tests/test_runtime_instrumentation.py` | Trace versions, event ordering, privacy fields, and JSON round trips. |
+| `tests/test_runtime_instrumentation.py` | Trace versions, event ordering, fold metadata, privacy fields, and JSON round trips. |
 
 Unit tests do not prove the injected code works against the pinned packages; rebuild the image and run the instrumentation benchmark after changing container instrumentation or its schema.
 
