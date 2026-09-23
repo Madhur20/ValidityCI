@@ -121,3 +121,57 @@ The collector first uses supported runtime calls, then an explicitly named finit
 **Verification:** A notebook containing only `answer = 42` completed successfully and returned an unsupported accuracy artifact because its configured fallback variable did not exist.
 
 **Lesson:** Unsupported evidence is a first-class result. It must never be silently converted into pass, zero, or execution failure.
+
+## H-012 — “Same result” needed more than one equality check
+
+**Type:** Design decision verified in live tests
+
+Comparing only notebook-output hashes would show that something changed but not whether the declared metric changed. Comparing only the metric could miss unstable predictions, logs, or secondary artifacts. Neither comparison can distinguish runtime drift from code-level nondeterminism.
+
+The reproducibility artifact stores ordered primary-metric values, maximum absolute delta, normalized output equality, and environment equality separately. A supported mismatch creates a finding with reasons; a missing signal produces `incomplete`.
+
+**Verification:** The stable example matched at `accuracy = 0.9` across both runs with equal output and environment hashes. An unseeded notebook produced different metrics and outputs while retaining the same environment hash.
+
+**Lesson:** A comparison should preserve the observations used to reach its conclusion. A single `reproducible: false` flag is difficult to diagnose and easy to misinterpret.
+
+## H-013 — Environment evidence must be useful without becoming an inventory leak
+
+**Type:** Design decision
+
+Full package lists help debugging but can reveal internal dependencies and make every report large. Recording only an image tag is also weak because mutable tags can refer to different images.
+
+The runner hashes a canonical list of installed package names and versions and the runner entrypoint itself, then combines those hashes with Python version, implementation, operating system, and machine architecture. Reports expose the aggregate hashes and basic runtime fields, not the full package list.
+
+This is data minimization, not a cryptographic privacy guarantee. A reviewer who already suspects a small set of package combinations could reproduce candidate hashes.
+
+**Lesson:** Environment equality improves attribution but does not prove semantic equivalence. System libraries, CPU behavior, locale, and external state may still matter and should be added only when justified by benchmark failures.
+
+## H-014 — Multiple calls to the same metric cannot be reduced to the last value
+
+**Type:** Anticipated and covered in tests
+
+Cross-validation, threshold sweeps, and per-split evaluation can call the primary metric several times. Comparing only the final call could hide changed call counts or earlier values.
+
+The comparison preserves metric values in call order. Different counts are divergence; equal-length sequences are compared element by element and report their maximum absolute delta.
+
+**Lesson:** Normalization should remove irrelevant representation differences without discarding meaningful execution structure.
+
+## H-015 — A useful data fingerprint is also a privacy identifier
+
+**Type:** Design decision verified in a live test
+
+An ordinary content hash would avoid writing raw rows but would still permit cross-report correlation and offline guessing for small identifier domains. The instrumentation now creates a random HMAC key inside each execution, emits only an opaque scope ID, and discards the key with the kernel.
+
+**Verification:** The full runtime benchmark linked the training split to scaler input, scaled training output to estimator input, and prediction output to metric input using equal within-run fingerprints. The serialized JSON contained the HMACs and shapes but neither raw values nor the key.
+
+**Lesson:** “No raw data” is not a complete privacy model. Fingerprint scope and key retention determine whether a digest becomes a durable pseudonymous identifier.
+
+## H-016 — High-level transformer calls produce nested events
+
+**Type:** Observed
+
+Scikit-learn's `fit_transform` commonly calls `fit` and `transform` internally. Instrumenting estimator method access therefore records the nested `fit`, nested `transform`, and enclosing `fit_transform` completion. The sequence is deterministic for the pinned benchmark and preserves the actual call structure rather than collapsing it.
+
+**Verification:** The runtime benchmark produced eight ordered events covering split, scaler fit, scaler transform, scaler fit-transform, test transform, estimator fit, prediction, and metric evaluation. All events pointed to the original notebook cell, and the metric remained `1.0`.
+
+**Lesson:** Event ordering currently describes operation completion, not call entry. Downstream checks must use event type, operation, cell, and fingerprint lineage together instead of assuming every adjacent event is a separate user-authored statement.

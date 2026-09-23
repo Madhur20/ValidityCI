@@ -2,7 +2,7 @@
 
 ## Thirty-second explanation
 
-ValidityCI is an independent validation gate for machine-learning experiments. Instead of reviewing whether notebook code looks reasonable, it executes a declared experiment in a restricted environment and builds evidence about what actually happened. The current system supports a pandas and scikit-learn notebook, captures supported metric calls as structured runtime artifacts, detects an unsuitable accuracy metric for an imbalanced binary target, and produces versioned JSON and HTML reports. The next work is repeated-execution comparison, followed by lineage instrumentation and leakage checks.
+ValidityCI is an independent validation gate for machine-learning experiments. Instead of reviewing whether notebook code looks reasonable, it executes a declared experiment twice in fresh restricted environments and builds evidence about what actually happened. The current system compares normalized metrics, notebook outputs, and environment fingerprints; it also captures versioned, privacy-minimized lineage events for supported split, preprocessing, fit, prediction, and metric operations. The next work is using that lineage for deterministic overlap and preprocessing-order checks.
 
 ## Why this is not another AI code reviewer
 
@@ -18,6 +18,8 @@ The important failures in ML experiments are often methodological rather than sy
 6. Failures remain first-class results: cell errors identify the cell and cause, timeouts remove the workload, and unavailable infrastructure produces `incomplete` rather than a false pass.
 7. Normalized metrics now make a stronger comparison possible, but the project does not claim automated metric reproducibility until the two-run comparison is implemented.
 8. Metric instrumentation uses hidden execution cells so user source remains unchanged; unsupported capture remains separate from failed execution.
+9. Reproducibility keeps metric, output, and environment signals separate, and divergence becomes a normal evidence-backed finding.
+10. Runtime traces use a separate schema and run-scoped HMAC fingerprints, so downstream checks can follow data flow without storing rows or exporting the key.
 
 ## Useful deep-dive questions
 
@@ -41,6 +43,10 @@ It proves that the normalized notebook outputs matched for the tested runs. It d
 
 Runtime wrappers provide stronger provenance: the metric operation, original cell, sample count, and selected parameters. Custom metric code may not call a supported function, so one explicitly named numeric variable is allowed as a fallback. The report records which method was used and returns `unsupported` instead of guessing when neither works; the audit remains `incomplete` until the primary metric is captured.
 
+### Why are two matching runs not proof of determinism?
+
+Intermittent behavior can match by chance, and some nondeterminism affects predictions without changing a rounded primary metric. Two fresh runs are a practical early signal. ValidityCI therefore preserves metric and output comparisons separately and avoids claiming mathematical proof of reproducibility.
+
 ### Where will AI appear?
 
 After deterministic evidence and an investigator benchmark exist. The proposed agent will have narrow tools for reading findings, execution records, lineage, and policies. Its output must cite evidence identifiers, and unsupported claims should be rejected or replaced with a deterministic summary.
@@ -50,7 +56,8 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 - The supported execution environment is intentionally limited to Python, pandas, and scikit-learn.
 - There is one deterministic validity check today: metric suitability for imbalanced binary classification.
 - Runtime capture currently covers six scikit-learn metric functions; estimator `.score`, custom functions, and third-party metric libraries need explicit support or the manifest fallback.
-- Output comparison does not yet explain which cell or value changed.
+- Runtime lineage covers scikit-learn `train_test_split` and `BaseEstimator` fit/transform/predict methods. Custom and third-party operations are outside the initial adapter and cannot yet be detected as observed-but-unsupported calls.
+- Output comparison detects a changed normalized output but does not yet localize the first differing cell or value.
 - Dependency locking and environment fingerprinting are not complete.
 - Docker reduces exposure but is not sufficient isolation for arbitrary hostile multi-tenant workloads.
 - No external pilot or willingness-to-pay evidence has been collected yet.
@@ -62,7 +69,9 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 3. Show a notebook with a seeded cell error and the exact cell/cause in the report.
 4. Explain why the status becomes `incomplete` for runner failures rather than “passed” or “invalid.”
 5. Show the normalized `accuracy = 0.9` artifact, its original cell, and its 20-sample count.
-6. End with the next milestone: comparing normalized metrics and output fingerprints across fresh executions.
+6. Show a seeded stable run marked `reproduced` across metric, output, and environment.
+7. Show an unseeded run with its metric delta and reproducibility finding.
+8. Show the runtime benchmark's ordered split, transform, fit, predict, and metric events, then end with the next milestone: entity-overlap and preprocessing-order checks built from that lineage.
 
 ## Claims to avoid
 

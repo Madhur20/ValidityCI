@@ -12,22 +12,24 @@
 - Automated tests and an intentionally flawed example
 - Restricted Docker runner with explicit resource and network policy
 
-## Milestone 2: reproducible notebook runner — in progress
+## Milestone 2: reproducible notebook runner — completed
 
 - Execute supported notebooks inside a restricted container — completed
 - Disable network access and enforce CPU, memory, process, and time limits — implemented
 - Capture cell failures, output fingerprints, and runtime — implemented
 - Capture normalized scikit-learn metric artifacts with a manifest-variable fallback — implemented
-- Capture a normalized environment fingerprint — pending
-- Compare two executions automatically and verify the declared metric — pending
+- Capture a normalized environment fingerprint — implemented
+- Compare two fresh executions across metrics, outputs, and environments — implemented
 
-## Milestone 3: experiment instrumentation
+## Milestone 3: experiment instrumentation — initial supported surface completed
 
-- Trace train/test split operations
-- Trace preprocessing `fit` and `fit_transform` calls
-- Trace estimator fitting, predictions, and metric calculations
-- Associate every runtime event with its notebook cell
-- Fingerprint datasets without exposing row values
+- Trace scikit-learn `train_test_split` operations — implemented
+- Trace scikit-learn estimator and transformer `fit`, `fit_transform`, and `transform` calls — implemented
+- Trace scikit-learn predictions and supported metric calculations — implemented
+- Associate every supported runtime event with its original notebook cell — implemented
+- Fingerprint datasets with run-scoped HMACs without storing row values or the key — implemented
+
+Custom split functions, non-scikit-learn estimators, estimator `score`, and third-party metric libraries remain outside the supported surface and are not inferred.
 
 ## Milestone 4: deterministic validity checks
 

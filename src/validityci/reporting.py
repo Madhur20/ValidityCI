@@ -82,11 +82,48 @@ def write_html(report: AuditReport, path: str | Path) -> None:
         metrics = (
             f"<ul>{''.join(metric_items)}</ul>" if metric_items else ""
         )
+        environment = (
+            ""
+            if execution.environment is None
+            else (
+                "<br>Environment: "
+                f"<code>{escape(execution.environment.fingerprint)}</code> "
+                f"· Python {escape(execution.environment.python_version)} "
+                f"· {escape(execution.environment.operating_system)} "
+                f"{escape(execution.environment.machine)}"
+            )
+        )
+        runtime = ""
+        if execution.runtime_trace is not None:
+            runtime_items = []
+            for event in execution.runtime_trace.events:
+                data_items = (*event.inputs, *event.outputs)
+                shapes = ", ".join(
+                    (
+                        f"{item.role}: {item.row_count}×{item.column_count}"
+                        if item.column_count is not None
+                        else f"{item.role}: {item.row_count} rows"
+                    )
+                    for item in data_items
+                )
+                runtime_items.append(
+                    f"<li><code>{escape(event.event_type.value)}</code> · "
+                    f"cell {event.cell_index} · {escape(event.operation)}"
+                    f"<br>{escape(shapes)}</li>"
+                )
+            runtime = (
+                "<details><summary>Runtime trace "
+                f"v{escape(execution.runtime_trace.schema_version)} · "
+                f"{len(execution.runtime_trace.events)} events</summary>"
+                f"<ul>{''.join(runtime_items)}</ul></details>"
+            )
         execution_items.append(
             "<li>"
             f"<strong>{escape(execution.status.replace('_', ' '))}</strong>{cell} "
             f"· {execution.duration_ms} ms<br>{detail}"
+            f"{environment}"
             f"{metrics}"
+            f"{runtime}"
             "</li>"
         )
     execution_section = (
@@ -96,6 +133,30 @@ def write_html(report: AuditReport, path: str | Path) -> None:
         if execution_items
         else ""
     )
+
+    reproducibility_section = ""
+    if report.reproducibility is not None:
+        comparison = report.reproducibility
+        reasons = "".join(
+            f"<li>{escape(reason)}</li>" for reason in comparison.reasons
+        )
+        reason_list = f"<ul>{reasons}</ul>" if reasons else ""
+        baseline_values = ", ".join(
+            f"{value:.12g}" for value in comparison.baseline_metric_values
+        ) or "unavailable"
+        repeated_values = ", ".join(
+            f"{value:.12g}" for value in comparison.repeated_metric_values
+        ) or "unavailable"
+        reproducibility_section = (
+            "<section><h2>Reproducibility</h2>"
+            f"<p><strong>{escape(comparison.status.upper())}</strong></p>"
+            f"<p>Metric match: {escape(str(comparison.metric_match))} · "
+            f"Output match: {escape(str(comparison.output_match))} · "
+            f"Environment match: {escape(str(comparison.environment_match))}</p>"
+            f"<p><code>{escape(comparison.primary_metric)}</code>: "
+            f"[{escape(baseline_values)}] → [{escape(repeated_values)}]</p>"
+            f"{reason_list}</section>"
+        )
 
     html = f"""<!doctype html>
 <html lang="en">
@@ -120,6 +181,7 @@ def write_html(report: AuditReport, path: str | Path) -> None:
     <p>{report.dataset.row_count} rows · target <code>{escape(report.dataset.target_column)}</code> · primary metric <code>{escape(report.config.primary_metric)}</code></p>
   </header>
   {execution_section}
+  {reproducibility_section}
   {''.join(finding_sections)}
 </body>
 </html>

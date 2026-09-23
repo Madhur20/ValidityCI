@@ -24,7 +24,9 @@ Possible response: define output-type-specific normalization, report which cells
 
 Python, NumPy, scikit-learn, deep-learning libraries, parallel algorithms, GPUs, and external services have separate sources of randomness. Some operations remain non-deterministic even after seeding.
 
-Possible response: capture environment and library fingerprints, trace seed-setting calls, repeat execution in fresh containers, and report residual variation rather than promising determinism.
+Current response: repeat execution in fresh containers and compare metric, output, and environment fingerprints. Future work still needs seed tracing, controlled parallelism, and repeated statistical trials for intermittent variation.
+
+Two matching runs are evidence, not proof of determinism. A flaky operation can happen to return the same result twice. Policy-driven run counts or statistical checks may be justified for high-risk workflows, but they have direct compute costs.
 
 ### A per-cell timeout and a wall timeout solve different problems
 
@@ -80,7 +82,7 @@ The first comparison is encouraging but narrow: the example retained the same ou
 
 To prove entity overlap or preprocessing order, the system needs to know which rows or partitions flowed into an operation without storing sensitive row values.
 
-Possible response: use scoped salted fingerprints and aggregate overlap counts. The salt and threat model need careful design so low-cardinality identifiers cannot be reversed.
+Current response: supported runtime events use run-scoped HMAC fingerprints. The secret key exists only inside the temporary kernel, so equal data can be linked within one execution without creating a cross-run identifier. This reduces offline guessing risk but intentionally prevents direct fingerprint comparison between repeated executions. Entity-overlap checks and any future stable customer-controlled scope still need an explicit threat model.
 
 ### A metric value lacks meaning without context
 

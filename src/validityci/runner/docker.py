@@ -19,7 +19,7 @@ from validityci.schemas import (
 )
 
 
-DEFAULT_RUNNER_IMAGE = "validityci-runner:0.2.0"
+DEFAULT_RUNNER_IMAGE = "validityci-runner:0.3.0"
 _CONTAINER_INPUT = "/workspace/input"
 _CONTAINER_OUTPUT = "/workspace/output"
 

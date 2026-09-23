@@ -545,7 +545,7 @@ Advancement depends on exit criteria, not elapsed weeks.
 
 ### 1. Versioned schemas — completed
 
-The report contract now uses schema version `1.2.0`, immutable slotted models, explicit round-trip serialization, controlled enums, unique identifiers, and evidence-reference validation. Execution records use their own `1.1.0` contract.
+The report contract now uses schema version `1.4.0`, immutable slotted models, explicit round-trip serialization, controlled enums, unique identifiers, and evidence-reference validation. Execution records use their own `1.3.0` contract, and runtime traces have an independently versioned `1.0.0` contract.
 
 ### 2. Runner protocol — completed
 
@@ -559,13 +559,13 @@ The Docker backend stages only declared inputs and runs as a non-root user with 
 
 The runner captures supported scikit-learn metric calls inside the notebook kernel and records the normalized name, finite value, original cell, sample count, capture method, and safe scalar parameters. A declared manifest variable is used only when the expected metric was not observed through instrumentation. If neither source produces a finite number, execution still succeeds but the metric artifact is explicitly `unsupported` and the overall audit remains `incomplete`.
 
-### 5. Repeated execution comparison
+### 5. Repeated execution comparison — completed
 
-Run in two fresh containers, compare normalized metrics and output fingerprints, and include environment fingerprints.
+Container execution now runs twice by default. The comparison preserves ordered primary-metric values, an absolute delta with a fixed tolerance, normalized output equality, and environment equality. Environment fingerprints cover the Python runtime, operating system, architecture, runner code, and installed packages without publishing the full package inventory. Supported divergence creates an evidence-backed finding; a failed run or missing comparison signal keeps the audit `incomplete`.
 
-### 6. Instrumentation schema
+### 6. Instrumentation schema — initial supported surface completed
 
-Define split, transform, fit, predict, and metric events with sequence, cell, operation, and fingerprints. Exclude raw values.
+Split, transform, fit, predict, and metric events record a stable sequence, original cell, fully qualified operation, safe scalar parameters, and input/output shape metadata. Run-scoped HMAC fingerprints preserve within-execution lineage without storing raw values or an exportable key. The pinned runner benchmark exercises all five event types. Custom and third-party operations remain explicitly outside this initial support boundary.
 
 ### 7. Entity-overlap check
 

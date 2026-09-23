@@ -33,6 +33,13 @@ def build_parser() -> argparse.ArgumentParser:
     audit_parser.add_argument("--cpus", type=int, default=2)
     audit_parser.add_argument("--process-limit", type=int, default=128)
     audit_parser.add_argument("--max-output-bytes", type=int, default=1_000_000)
+    audit_parser.add_argument(
+        "--runs",
+        type=int,
+        choices=(1, 2),
+        default=2,
+        help="Number of fresh executions when --execute is enabled (default: 2)",
+    )
     return parser
 
 
@@ -55,13 +62,17 @@ def main(argv: list[str] | None = None) -> None:
                 args.config,
                 runner=runner,
                 limits=limits,
+                execution_count=args.runs,
             )
             write_json(report, args.output)
             write_html(report, args.html)
             print(f"Audit status: {report.status}")
             print(f"Findings: {len(report.findings)}")
             if report.executions:
-                print(f"Execution: {report.executions[0].status}")
+                for execution in report.executions:
+                    print(f"Execution {execution.execution_id}: {execution.status}")
+            if report.reproducibility is not None:
+                print(f"Reproducibility: {report.reproducibility.status}")
             print(f"JSON report: {args.output}")
             print(f"HTML report: {args.html}")
     except (OSError, ValueError) as error:

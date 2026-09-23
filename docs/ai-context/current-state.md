@@ -1,0 +1,53 @@
+# Current state
+
+Last reviewed: 2026-09-22
+
+## Product boundary
+
+ValidityCI is an independent, local-first validation gate for notebook-based tabular ML experiments. It is not a general code reviewer, a certification system, a hosted MLOps platform, or proof that a model is universally correct.
+
+## Implemented
+
+- Dependency-free CLI, TOML manifest loading, notebook inspection, CSV profiling, JSON reports, and HTML reports.
+- One deterministic validity check: accuracy suitability for an imbalanced binary target.
+- Runner protocol plus deterministic fake runner for fast orchestration tests.
+- Restricted Docker execution with declared-input staging, network denial, non-root execution, read-only root/input, and CPU, memory, process, output, cell, and wall-time limits.
+- Structured cell failures, timeouts, runner failures, normalized user-output fingerprints, and cleanup of timed-out containers.
+- Structured capture for six scikit-learn metrics with one explicit manifest-variable fallback.
+- Two fresh executions by default, environment fingerprints, and separate metric/output/environment comparisons.
+- Versioned runtime events for supported split, fit, transform, predict, and metric calls with original cell attribution.
+- Run-scoped HMAC data lineage containing types and shapes but no serialized row values or retained key.
+- Forty-two dependency-free unit tests plus successful live Docker smoke tests of the example and full runtime benchmark.
+
+## Versions
+
+- Package version: `0.1.0` (packaging has not yet been aligned with runner milestones).
+- Default runner image: `validityci-runner:0.3.0`.
+- Audit report schema: `1.4.0`.
+- Execution request/result schema: `1.3.0`.
+- Runtime instrumentation schema: `1.0.0`.
+
+Schema constants in `src/validityci/schemas/__init__.py` and `docker/runner/execute_notebook.py` are authoritative if this document becomes stale.
+
+## Known support limits
+
+- One notebook, one local CSV, binary classification, Python, pandas, NumPy, and scikit-learn.
+- Fixed runner dependencies; no arbitrary installation, services, databases, GPUs, distributed execution, or network access.
+- Runtime lineage covers `train_test_split` and methods inherited through scikit-learn `BaseEstimator`; custom and third-party operations are not observed.
+- Metric wrappers cover six named functions. Estimator `.score`, aliases imported before setup, custom functions, and third-party metrics need adapters or the manifest fallback.
+- `fit_transform` produces nested fit, transform, and enclosing fit-transform completion events.
+- HMAC fingerprints are comparable only inside one execution; repeated runs compare event structure, metrics, outputs, and environments.
+- Docker materially reduces exposure but is not a sufficient boundary for hostile multi-tenant workloads.
+- The package and image dependency chain is not yet fully locked by digest and hashes.
+- No external pilot or commercial demand has been validated.
+
+## Next technical work
+
+The next milestone is deterministic checks built on runtime lineage:
+
+1. Entity overlap between configured training and test partitions.
+2. Preprocessing fitted before a split or on evaluation data.
+3. Expanded metric evidence such as confusion-matrix values.
+4. Severity/confidence policy refinement and permanent regression benchmarks.
+
+Do not add an AI investigator before deterministic checks and an investigator evaluation benchmark exist.

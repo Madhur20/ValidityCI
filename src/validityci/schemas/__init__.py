@@ -12,8 +12,9 @@ from typing import Any, TypeAlias, cast
 import tomllib
 
 
-REPORT_SCHEMA_VERSION = "1.2.0"
-EXECUTION_SCHEMA_VERSION = "1.1.0"
+REPORT_SCHEMA_VERSION = "1.4.0"
+EXECUTION_SCHEMA_VERSION = "1.3.0"
+INSTRUMENTATION_SCHEMA_VERSION = "1.0.0"
 SUPPORTED_TASKS = frozenset({"binary_classification"})
 SUPPORTED_METRICS = frozenset(
     {"accuracy", "balanced_accuracy", "f1", "precision", "recall", "roc_auc"}
@@ -46,6 +47,20 @@ class MetricCaptureMethod(StrEnum):
     RUNTIME_WRAPPER = "runtime_wrapper"
     MANIFEST_VARIABLE = "manifest_variable"
     NOT_OBSERVED = "not_observed"
+
+
+class ReproducibilityStatus(StrEnum):
+    REPRODUCED = "reproduced"
+    DIVERGED = "diverged"
+    INCOMPLETE = "incomplete"
+
+
+class RuntimeEventType(StrEnum):
+    SPLIT = "split"
+    FIT = "fit"
+    TRANSFORM = "transform"
+    PREDICT = "predict"
+    METRIC = "metric"
 
 
 class Severity(StrEnum):
@@ -392,6 +407,200 @@ class MetricSelector:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeDataFingerprint:
+    """Privacy-minimized identity for data observed by one runtime operation."""
+
+    role: str
+    fingerprint: str
+    data_type: str
+    row_count: int
+    column_count: int | None = None
+
+    def __post_init__(self) -> None:
+        _require_identifier("runtime data role", self.role)
+        _require_identifier("runtime data fingerprint", self.fingerprint)
+        _require_non_empty("runtime data type", self.data_type)
+        _strict_int(self.row_count, "runtime data row_count")
+        if self.row_count < 0:
+            raise ValueError("runtime data row_count cannot be negative")
+        if self.column_count is not None:
+            _strict_int(self.column_count, "runtime data column_count")
+            if self.column_count < 0:
+                raise ValueError("runtime data column_count cannot be negative")
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "RuntimeDataFingerprint":
+        _reject_unknown(
+            raw,
+            {"role", "fingerprint", "data_type", "row_count", "column_count"},
+            "runtime data fingerprint",
+        )
+        column_count = raw.get("column_count")
+        if column_count is not None:
+            column_count = _strict_int(column_count, "runtime data column_count")
+        return cls(
+            role=_string(raw, "role"),
+            fingerprint=_string(raw, "fingerprint"),
+            data_type=_string(raw, "data_type"),
+            row_count=_integer(raw, "row_count"),
+            column_count=column_count,
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "role": self.role,
+            "fingerprint": self.fingerprint,
+            "data_type": self.data_type,
+            "row_count": self.row_count,
+            "column_count": self.column_count,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeEvent:
+    id: str
+    sequence: int
+    event_type: RuntimeEventType
+    operation: str
+    cell_index: int
+    inputs: tuple[RuntimeDataFingerprint, ...] = ()
+    outputs: tuple[RuntimeDataFingerprint, ...] = ()
+    parameters: Mapping[str, JsonValue] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _require_identifier("runtime event id", self.id)
+        _strict_int(self.sequence, "runtime event sequence")
+        if self.sequence < 1:
+            raise ValueError("runtime event sequence must be positive")
+        object.__setattr__(
+            self,
+            "event_type",
+            _enum_value(RuntimeEventType, self.event_type, "runtime event type"),
+        )
+        _require_non_empty("runtime operation", self.operation)
+        _strict_int(self.cell_index, "runtime event cell_index")
+        if self.cell_index < 0:
+            raise ValueError("runtime event cell_index cannot be negative")
+        object.__setattr__(self, "inputs", tuple(self.inputs))
+        object.__setattr__(self, "outputs", tuple(self.outputs))
+        fingerprints = (*self.inputs, *self.outputs)
+        if not fingerprints:
+            raise ValueError("Runtime events require at least one data fingerprint")
+        if any(not isinstance(item, RuntimeDataFingerprint) for item in fingerprints):
+            raise TypeError("Runtime event data must contain RuntimeDataFingerprint values")
+        object.__setattr__(self, "parameters", _freeze_mapping(self.parameters))
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "RuntimeEvent":
+        _reject_unknown(
+            raw,
+            {
+                "id",
+                "sequence",
+                "event_type",
+                "operation",
+                "cell_index",
+                "inputs",
+                "outputs",
+                "parameters",
+            },
+            "runtime event",
+        )
+        return cls(
+            id=_string(raw, "id"),
+            sequence=_integer(raw, "sequence"),
+            event_type=_enum_value(
+                RuntimeEventType, _string(raw, "event_type"), "runtime event type"
+            ),
+            operation=_string(raw, "operation"),
+            cell_index=_integer(raw, "cell_index"),
+            inputs=tuple(
+                RuntimeDataFingerprint.from_dict(
+                    _mapping(item, "runtime input fingerprint")
+                )
+                for item in _sequence(raw, "inputs")
+            ),
+            outputs=tuple(
+                RuntimeDataFingerprint.from_dict(
+                    _mapping(item, "runtime output fingerprint")
+                )
+                for item in _sequence(raw, "outputs")
+            ),
+            parameters=cast(
+                Mapping[str, JsonValue],
+                _mapping(raw.get("parameters", {}), "runtime event parameters"),
+            ),
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "id": self.id,
+            "sequence": self.sequence,
+            "event_type": self.event_type.value,
+            "operation": self.operation,
+            "cell_index": self.cell_index,
+            "inputs": [item.to_dict() for item in self.inputs],
+            "outputs": [item.to_dict() for item in self.outputs],
+            "parameters": _thaw_mapping(self.parameters),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeTrace:
+    fingerprint_scope_id: str
+    events: tuple[RuntimeEvent, ...]
+    fingerprint_algorithm: str = "hmac-sha256"
+    schema_version: str = INSTRUMENTATION_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if self.schema_version != INSTRUMENTATION_SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported instrumentation schema version {self.schema_version!r}; "
+                f"expected {INSTRUMENTATION_SCHEMA_VERSION!r}"
+            )
+        _require_identifier("fingerprint scope id", self.fingerprint_scope_id)
+        if self.fingerprint_algorithm != "hmac-sha256":
+            raise ValueError("Unsupported runtime fingerprint algorithm")
+        object.__setattr__(self, "events", tuple(self.events))
+        if any(not isinstance(event, RuntimeEvent) for event in self.events):
+            raise TypeError("events must contain RuntimeEvent values")
+        _require_unique([event.id for event in self.events], "runtime event IDs")
+        expected_sequences = list(range(1, len(self.events) + 1))
+        if [event.sequence for event in self.events] != expected_sequences:
+            raise ValueError("Runtime event sequences must be contiguous and ordered")
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "RuntimeTrace":
+        _reject_unknown(
+            raw,
+            {
+                "schema_version",
+                "fingerprint_scope_id",
+                "fingerprint_algorithm",
+                "events",
+            },
+            "runtime trace",
+        )
+        return cls(
+            schema_version=_string(raw, "schema_version"),
+            fingerprint_scope_id=_string(raw, "fingerprint_scope_id"),
+            fingerprint_algorithm=_string(raw, "fingerprint_algorithm"),
+            events=tuple(
+                RuntimeEvent.from_dict(_mapping(item, "runtime event"))
+                for item in _sequence(raw, "events")
+            ),
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "schema_version": self.schema_version,
+            "fingerprint_scope_id": self.fingerprint_scope_id,
+            "fingerprint_algorithm": self.fingerprint_algorithm,
+            "events": [event.to_dict() for event in self.events],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MetricArtifact:
     id: str
     metric_name: str
@@ -682,6 +891,62 @@ class ExecutionFailure:
 
 
 @dataclass(frozen=True, slots=True)
+class EnvironmentFingerprint:
+    fingerprint: str
+    python_version: str
+    python_implementation: str
+    operating_system: str
+    machine: str
+    packages_fingerprint: str
+    runner_fingerprint: str
+
+    def __post_init__(self) -> None:
+        _require_identifier("environment fingerprint", self.fingerprint)
+        _require_non_empty("Python version", self.python_version)
+        _require_non_empty("Python implementation", self.python_implementation)
+        _require_non_empty("operating system", self.operating_system)
+        _require_non_empty("machine", self.machine)
+        _require_identifier("packages fingerprint", self.packages_fingerprint)
+        _require_identifier("runner fingerprint", self.runner_fingerprint)
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "EnvironmentFingerprint":
+        _reject_unknown(
+            raw,
+            {
+                "fingerprint",
+                "python_version",
+                "python_implementation",
+                "operating_system",
+                "machine",
+                "packages_fingerprint",
+                "runner_fingerprint",
+            },
+            "environment fingerprint",
+        )
+        return cls(
+            fingerprint=_string(raw, "fingerprint"),
+            python_version=_string(raw, "python_version"),
+            python_implementation=_string(raw, "python_implementation"),
+            operating_system=_string(raw, "operating_system"),
+            machine=_string(raw, "machine"),
+            packages_fingerprint=_string(raw, "packages_fingerprint"),
+            runner_fingerprint=_string(raw, "runner_fingerprint"),
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "fingerprint": self.fingerprint,
+            "python_version": self.python_version,
+            "python_implementation": self.python_implementation,
+            "operating_system": self.operating_system,
+            "machine": self.machine,
+            "packages_fingerprint": self.packages_fingerprint,
+            "runner_fingerprint": self.runner_fingerprint,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionResult:
     execution_id: str
     status: ExecutionStatus
@@ -689,6 +954,8 @@ class ExecutionResult:
     output_fingerprint: str | None = None
     failure: ExecutionFailure | None = None
     metrics: tuple[MetricArtifact, ...] = ()
+    environment: EnvironmentFingerprint | None = None
+    runtime_trace: RuntimeTrace | None = None
     schema_version: str = EXECUTION_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -708,6 +975,14 @@ class ExecutionResult:
         if any(not isinstance(metric, MetricArtifact) for metric in self.metrics):
             raise TypeError("metrics must contain MetricArtifact values")
         _require_unique([metric.id for metric in self.metrics], "metric artifact IDs")
+        if self.environment is not None and not isinstance(
+            self.environment, EnvironmentFingerprint
+        ):
+            raise TypeError("environment must be EnvironmentFingerprint")
+        if self.runtime_trace is not None and not isinstance(
+            self.runtime_trace, RuntimeTrace
+        ):
+            raise TypeError("runtime_trace must be RuntimeTrace")
         if self.status is ExecutionStatus.SUCCEEDED:
             if self.output_fingerprint is None:
                 raise ValueError("Successful executions require an output_fingerprint")
@@ -734,10 +1009,14 @@ class ExecutionResult:
                 "output_fingerprint",
                 "failure",
                 "metrics",
+                "environment",
+                "runtime_trace",
             },
             "execution result",
         )
         failure = raw.get("failure")
+        environment = raw.get("environment")
+        runtime_trace = raw.get("runtime_trace")
         return cls(
             schema_version=_string(raw, "schema_version"),
             execution_id=_string(raw, "execution_id"),
@@ -755,6 +1034,18 @@ class ExecutionResult:
                 MetricArtifact.from_dict(_mapping(item, "metric artifact"))
                 for item in _sequence(raw, "metrics")
             ),
+            environment=(
+                None
+                if environment is None
+                else EnvironmentFingerprint.from_dict(
+                    _mapping(environment, "environment fingerprint")
+                )
+            ),
+            runtime_trace=(
+                None
+                if runtime_trace is None
+                else RuntimeTrace.from_dict(_mapping(runtime_trace, "runtime trace"))
+            ),
         )
 
     def to_dict(self) -> JsonObject:
@@ -766,6 +1057,146 @@ class ExecutionResult:
             "output_fingerprint": self.output_fingerprint,
             "failure": None if self.failure is None else self.failure.to_dict(),
             "metrics": [metric.to_dict() for metric in self.metrics],
+            "environment": (
+                None if self.environment is None else self.environment.to_dict()
+            ),
+            "runtime_trace": (
+                None if self.runtime_trace is None else self.runtime_trace.to_dict()
+            ),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ReproducibilityComparison:
+    status: ReproducibilityStatus
+    baseline_execution_id: str
+    repeated_execution_id: str
+    primary_metric: str
+    baseline_metric_values: tuple[float, ...]
+    repeated_metric_values: tuple[float, ...]
+    metric_match: bool | None
+    output_match: bool | None
+    environment_match: bool | None
+    max_absolute_delta: float | None = None
+    reasons: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "status",
+            _enum_value(
+                ReproducibilityStatus, self.status, "reproducibility status"
+            ),
+        )
+        _require_identifier("baseline execution id", self.baseline_execution_id)
+        _require_identifier("repeated execution id", self.repeated_execution_id)
+        if self.baseline_execution_id == self.repeated_execution_id:
+            raise ValueError("Reproducibility comparison requires distinct executions")
+        if self.primary_metric not in SUPPORTED_METRICS:
+            raise ValueError(f"Unsupported comparison metric: {self.primary_metric}")
+        object.__setattr__(
+            self,
+            "baseline_metric_values",
+            _finite_float_tuple(self.baseline_metric_values, "baseline metric values"),
+        )
+        object.__setattr__(
+            self,
+            "repeated_metric_values",
+            _finite_float_tuple(self.repeated_metric_values, "repeated metric values"),
+        )
+        for label, value in (
+            ("metric_match", self.metric_match),
+            ("output_match", self.output_match),
+            ("environment_match", self.environment_match),
+        ):
+            if value is not None and not isinstance(value, bool):
+                raise TypeError(f"{label} must be a boolean or null")
+        if self.max_absolute_delta is not None:
+            if isinstance(self.max_absolute_delta, bool) or not isinstance(
+                self.max_absolute_delta, (int, float)
+            ):
+                raise TypeError("max_absolute_delta must be numeric")
+            delta = float(self.max_absolute_delta)
+            if not math.isfinite(delta) or delta < 0:
+                raise ValueError("max_absolute_delta must be finite and non-negative")
+            object.__setattr__(self, "max_absolute_delta", delta)
+        object.__setattr__(self, "reasons", tuple(self.reasons))
+        for reason in self.reasons:
+            _require_non_empty("reproducibility reason", reason)
+        signals = (self.metric_match, self.output_match, self.environment_match)
+        if self.status is ReproducibilityStatus.REPRODUCED:
+            if signals != (True, True, True) or self.reasons:
+                raise ValueError("Reproduced comparisons require three matching signals")
+        elif self.status is ReproducibilityStatus.DIVERGED:
+            if False not in signals or not self.reasons:
+                raise ValueError("Diverged comparisons require a mismatch and reason")
+        elif None not in signals or not self.reasons:
+            raise ValueError("Incomplete comparisons require a missing signal and reason")
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "ReproducibilityComparison":
+        _reject_unknown(
+            raw,
+            {
+                "status",
+                "baseline_execution_id",
+                "repeated_execution_id",
+                "primary_metric",
+                "baseline_metric_values",
+                "repeated_metric_values",
+                "metric_match",
+                "output_match",
+                "environment_match",
+                "max_absolute_delta",
+                "reasons",
+            },
+            "reproducibility comparison",
+        )
+        max_delta = _required(raw, "max_absolute_delta")
+        if max_delta is not None and (
+            isinstance(max_delta, bool) or not isinstance(max_delta, (int, float))
+        ):
+            raise TypeError("max_absolute_delta must be numeric")
+        return cls(
+            status=_enum_value(
+                ReproducibilityStatus,
+                _string(raw, "status"),
+                "reproducibility status",
+            ),
+            baseline_execution_id=_string(raw, "baseline_execution_id"),
+            repeated_execution_id=_string(raw, "repeated_execution_id"),
+            primary_metric=_string(raw, "primary_metric"),
+            baseline_metric_values=tuple(
+                _strict_number(item, "baseline metric value")
+                for item in _sequence(raw, "baseline_metric_values")
+            ),
+            repeated_metric_values=tuple(
+                _strict_number(item, "repeated metric value")
+                for item in _sequence(raw, "repeated_metric_values")
+            ),
+            metric_match=_optional_boolean(raw, "metric_match"),
+            output_match=_optional_boolean(raw, "output_match"),
+            environment_match=_optional_boolean(raw, "environment_match"),
+            max_absolute_delta=None if max_delta is None else float(max_delta),
+            reasons=tuple(
+                _string_value(item, "reproducibility reason")
+                for item in _sequence(raw, "reasons")
+            ),
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "status": self.status.value,
+            "baseline_execution_id": self.baseline_execution_id,
+            "repeated_execution_id": self.repeated_execution_id,
+            "primary_metric": self.primary_metric,
+            "baseline_metric_values": list(self.baseline_metric_values),
+            "repeated_metric_values": list(self.repeated_metric_values),
+            "metric_match": self.metric_match,
+            "output_match": self.output_match,
+            "environment_match": self.environment_match,
+            "max_absolute_delta": self.max_absolute_delta,
+            "reasons": list(self.reasons),
         }
 
 
@@ -778,6 +1209,7 @@ class AuditReport:
     evidence: tuple[Evidence, ...]
     findings: tuple[Finding, ...]
     executions: tuple[ExecutionResult, ...] = ()
+    reproducibility: ReproducibilityComparison | None = None
     schema_version: str = REPORT_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -795,6 +1227,17 @@ class AuditReport:
         _require_unique(evidence_ids, "evidence IDs")
         _require_unique(finding_ids, "finding IDs")
         _require_unique(execution_ids, "execution IDs")
+        if self.reproducibility is not None:
+            if not isinstance(self.reproducibility, ReproducibilityComparison):
+                raise TypeError("reproducibility must be ReproducibilityComparison")
+            compared_ids = {
+                self.reproducibility.baseline_execution_id,
+                self.reproducibility.repeated_execution_id,
+            }
+            if not compared_ids.issubset(set(execution_ids)):
+                raise ValueError(
+                    "Reproducibility comparison references missing executions"
+                )
         known = set(evidence_ids)
         missing = sorted(
             {reference for finding in self.findings for reference in finding.evidence_ids if reference not in known}
@@ -814,17 +1257,28 @@ class AuditReport:
             for metric in execution.metrics
         )
         metric_capture_incomplete = bool(self.executions) and not primary_metric_captured
-        audit_incomplete = execution_failed or metric_capture_incomplete
+        comparison_incomplete = (
+            self.reproducibility is not None
+            and self.reproducibility.status is ReproducibilityStatus.INCOMPLETE
+        )
+        comparison_diverged = (
+            self.reproducibility is not None
+            and self.reproducibility.status is ReproducibilityStatus.DIVERGED
+        )
+        audit_incomplete = (
+            execution_failed or metric_capture_incomplete or comparison_incomplete
+        )
         if audit_incomplete and self.status is not AuditStatus.INCOMPLETE:
             raise ValueError(
                 "Reports with unsuccessful execution or unsupported primary metric "
                 "must use status 'incomplete'"
             )
-        if not audit_incomplete and self.findings and self.status is not AuditStatus.ATTENTION_REQUIRED:
+        attention_required = bool(self.findings) or comparison_diverged
+        if not audit_incomplete and attention_required and self.status is not AuditStatus.ATTENTION_REQUIRED:
             raise ValueError("Reports with findings must use status 'attention_required'")
         if (
             not audit_incomplete
-            and not self.findings
+            and not attention_required
             and self.status is not AuditStatus.PASSED_SUPPORTED_CHECKS
         ):
             raise ValueError("Reports without findings must use status 'passed_supported_checks'")
@@ -842,9 +1296,11 @@ class AuditReport:
                 "evidence",
                 "findings",
                 "executions",
+                "reproducibility",
             },
             "audit report",
         )
+        reproducibility = raw.get("reproducibility")
         return cls(
             schema_version=_string(raw, "schema_version"),
             status=_enum_value(AuditStatus, _string(raw, "status"), "audit status"),
@@ -856,6 +1312,13 @@ class AuditReport:
             executions=tuple(
                 ExecutionResult.from_dict(_mapping(item, "execution result"))
                 for item in _sequence(raw, "executions")
+            ),
+            reproducibility=(
+                None
+                if reproducibility is None
+                else ReproducibilityComparison.from_dict(
+                    _mapping(reproducibility, "reproducibility comparison")
+                )
             ),
         )
 
@@ -869,6 +1332,11 @@ class AuditReport:
             "evidence": [item.to_dict() for item in self.evidence],
             "findings": [item.to_dict() for item in self.findings],
             "executions": [item.to_dict() for item in self.executions],
+            "reproducibility": (
+                None
+                if self.reproducibility is None
+                else self.reproducibility.to_dict()
+            ),
         }
 
 
@@ -926,6 +1394,26 @@ def _number(raw: Mapping[str, Any], key: str) -> float:
     if not math.isfinite(number):
         raise ValueError(f"{key} must be finite")
     return number
+
+
+def _strict_number(value: Any, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{label} must be a number")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{label} must be finite")
+    return number
+
+
+def _finite_float_tuple(values: tuple[float, ...], label: str) -> tuple[float, ...]:
+    return tuple(_strict_number(value, label) for value in values)
+
+
+def _optional_boolean(raw: Mapping[str, Any], key: str) -> bool | None:
+    value = _required(raw, key)
+    if value is not None and not isinstance(value, bool):
+        raise TypeError(f"{key} must be a boolean or null")
+    return value
 
 
 def _sequence(
@@ -1027,12 +1515,14 @@ def _thaw_mapping(value: Mapping[str, JsonValue]) -> JsonObject:
 
 __all__ = [
     "EXECUTION_SCHEMA_VERSION",
+    "INSTRUMENTATION_SCHEMA_VERSION",
     "REPORT_SCHEMA_VERSION",
     "AuditReport",
     "AuditStatus",
     "Confidence",
     "DatasetProfile",
     "Evidence",
+    "EnvironmentFingerprint",
     "ExperimentConfig",
     "ExecutionFailure",
     "ExecutionRequest",
@@ -1046,5 +1536,11 @@ __all__ = [
     "NotebookCell",
     "NotebookSummary",
     "ResourceLimits",
+    "ReproducibilityComparison",
+    "ReproducibilityStatus",
+    "RuntimeDataFingerprint",
+    "RuntimeEvent",
+    "RuntimeEventType",
+    "RuntimeTrace",
     "Severity",
 ]
