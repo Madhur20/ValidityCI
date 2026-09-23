@@ -101,3 +101,9 @@ The configured entity column is passed to the runner as policy context. When the
 Supported scikit-learn method events now identify whether the object is a transformer or estimator. The check examines transformer `fit` and `fit_transform` completion events, then compares their input fingerprints with earlier `train_test_split` inputs and train/test outputs. A fit before the split, on the full input, or on the test output is blocking; unmatched lineage requires review.
 
 **Tradeoff:** Completion ordering and fingerprint equality provide strong evidence for the pinned adapter but do not model arbitrary pipelines, custom transformers, cross-validation, or transformations that create a derived training view before fitting. Missing object classification or split lineage is therefore `unsupported`, and an unmatched derived input is `review`, rather than inferred as safe or leaky.
+
+## D-018 — Export confusion counts, not classification arrays
+
+Supported metric wrappers compute binary `TN`, `FP`, `FN`, and `TP` counts inside the notebook kernel using the manifest's positive class. Only those four counts and the already-declared positive-class value enter the metric artifact. Runtime target and prediction arrays remain inputs to the existing run-scoped fingerprinting path and are not serialized.
+
+**Tradeoff:** Aggregate counts enable class-sensitive review without creating a row-level prediction artifact, but they cannot support threshold analysis, subgroup slicing, or error inspection after execution. Continuous-score, multiclass, ambiguous-label, and manifest-variable cases therefore retain an explicit unsupported reason until a separately reviewed evidence contract exists.

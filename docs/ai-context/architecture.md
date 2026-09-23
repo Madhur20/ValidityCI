@@ -58,7 +58,7 @@ Static inspection always happens. Docker execution is optional, and valid static
 
 The host never rewrites notebook source. The container inserts a setup cell before all original cells, a current-cell marker before each user code cell, and one collector after all original cells; synthetic cells are removed before output fingerprinting.
 
-The setup wraps supported metric and split functions and scikit-learn estimator method access. Events are recorded when operations complete, so composite operations such as `fit_transform` can contain nested events before the enclosing event.
+The setup wraps supported metric and split functions and scikit-learn estimator method access. Metric wrappers retain scalar values plus aggregate binary confusion counts relative to the declared positive class; labels and predictions remain inside the kernel. Events are recorded when operations complete, so composite operations such as `fit_transform` can contain nested events before the enclosing event.
 
 When an entity column is configured, split instrumentation looks only among values actually passed to `train_test_split`. It computes entity-set intersection inside the kernel and emits aggregate counts; `checks/entity_overlap.py` converts those aggregates into an explicit check result, evidence, and an optional finding.
 

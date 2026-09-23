@@ -33,6 +33,8 @@ Deterministic `CheckResult` values use `pass`, `fail`, `review`, `not_applicable
 - Supported scikit-learn method events classify the object as a transformer or estimator; missing classification makes preprocessing analysis unsupported.
 - Metric artifacts remain separate from runtime metric events because they serve different consumers.
 - Manifest-variable metrics have weaker provenance and must retain a distinct capture method.
+- Captured confusion matrices contain only four non-negative aggregate counts and the already-declared positive class; target and prediction arrays never enter the execution result.
+- One-class evaluation slices may still produce a binary confusion matrix. More than two observed labels, ambiguous positive-class matching, or score-valued predictions are explicitly unsupported.
 - Synthetic cells and transient execution metadata do not affect the normalized notebook-output fingerprint.
 
 ## Privacy invariants

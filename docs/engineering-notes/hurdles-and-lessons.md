@@ -195,3 +195,13 @@ The intentionally flawed preprocessing benchmark fits `StandardScaler` on the co
 The preprocessing check independently classified both the nested scaler `fit` and enclosing `fit_transform` as occurring before the split in both runs. It produced one blocking, high-confidence finding. The clean benchmark fitted the same transformer only on the captured training output and passed. Serialized reports contained operation metadata and run-scoped fingerprints, but no raw data, data-value field, or fingerprint key.
 
 **Lesson:** Stability and validity are independent properties. Runtime lineage can prove a narrow leakage condition without retaining the underlying records, while duplicate nested events should be summarized into one reviewer finding.
+
+## H-019 — A binary test slice may observe only one class
+
+**Type:** Observed in a live benchmark
+
+The first confusion-matrix implementation required exactly two labels across evaluation targets and predictions. The five-row stratified benchmark slice happened to contain only the negative class, so the runner correctly avoided guessing but returned `unsupported` even though the configured binary positive class made the aggregate interpretation unambiguous.
+
+The capture policy now accepts one or two observed labels. If only the configured positive class appears, all negative-side counts are zero; if only a different class appears, all positive-side counts are zero. More than two labels or a two-label set that cannot uniquely match the configured positive class remains unsupported. The live benchmark then produced `TN=5, FP=0, FN=0, TP=0`, totaling its five samples, with no target or prediction arrays in JSON.
+
+**Lesson:** Binary task semantics come from the declared policy as well as the values present in a small evaluation slice. Absence of a class is evidence, not necessarily unsupported instrumentation.

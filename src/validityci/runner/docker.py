@@ -19,7 +19,7 @@ from validityci.schemas import (
 )
 
 
-DEFAULT_RUNNER_IMAGE = "validityci-runner:0.4.1"
+DEFAULT_RUNNER_IMAGE = "validityci-runner:0.4.2"
 _CONTAINER_INPUT = "/workspace/input"
 _CONTAINER_OUTPUT = "/workspace/output"
 
@@ -240,6 +240,8 @@ class DockerRunner:
                 )
         if request.entity_column is not None:
             command.extend(["--entity-column", request.entity_column])
+        if request.positive_class is not None:
+            command.extend(["--positive-class", request.positive_class])
         return command
 
     def _remove_container(self, container_name: str) -> None:

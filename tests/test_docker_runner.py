@@ -78,6 +78,7 @@ class DockerRunnerTests(unittest.TestCase):
         self.assertIn("accuracy", self._option_values(command, "--metric-name"))
         self.assertIn("accuracy", self._option_values(command, "--metric-variable"))
         self.assertIn("entity_id", self._option_values(command, "--entity-column"))
+        self.assertIn("1", self._option_values(command, "--positive-class"))
         self.assertNotIn("--privileged", command)
         self.assertEqual(observed["kwargs"]["timeout"], 2)  # type: ignore[index]
 
@@ -166,6 +167,7 @@ class DockerRunnerTests(unittest.TestCase):
                 metric_name="accuracy", variable_name="accuracy"
             ),
             entity_column="entity_id",
+            positive_class="1",
             limits=ResourceLimits(
                 timeout_seconds=2,
                 memory_mb=256,

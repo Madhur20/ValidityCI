@@ -12,9 +12,9 @@ from typing import Any, TypeAlias, cast
 import tomllib
 
 
-REPORT_SCHEMA_VERSION = "1.5.0"
-EXECUTION_SCHEMA_VERSION = "1.5.0"
-INSTRUMENTATION_SCHEMA_VERSION = "1.2.0"
+REPORT_SCHEMA_VERSION = "1.6.0"
+EXECUTION_SCHEMA_VERSION = "1.6.0"
+INSTRUMENTATION_SCHEMA_VERSION = "1.3.0"
 SUPPORTED_TASKS = frozenset({"binary_classification"})
 SUPPORTED_METRICS = frozenset(
     {"accuracy", "balanced_accuracy", "f1", "precision", "recall", "roc_auc"}
@@ -47,6 +47,11 @@ class MetricCaptureMethod(StrEnum):
     RUNTIME_WRAPPER = "runtime_wrapper"
     MANIFEST_VARIABLE = "manifest_variable"
     NOT_OBSERVED = "not_observed"
+
+
+class ConfusionMatrixStatus(StrEnum):
+    CAPTURED = "captured"
+    UNSUPPORTED = "unsupported"
 
 
 class ReproducibilityStatus(StrEnum):
@@ -108,6 +113,7 @@ class ExperimentConfig:
             _require_python_identifier(
                 "primary_metric_variable", self.primary_metric_variable
             )
+        _require_non_empty("positive_class", self.positive_class)
         if isinstance(self.random_seed, bool) or not isinstance(self.random_seed, int):
             raise TypeError("random_seed must be an integer")
 
@@ -661,6 +667,96 @@ class RuntimeTrace:
 
 
 @dataclass(frozen=True, slots=True)
+class BinaryConfusionMatrix:
+    status: ConfusionMatrixStatus
+    positive_class: str
+    true_negative: int | None = None
+    false_positive: int | None = None
+    false_negative: int | None = None
+    true_positive: int | None = None
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "status",
+            _enum_value(ConfusionMatrixStatus, self.status, "confusion matrix status"),
+        )
+        _require_non_empty("confusion matrix positive_class", self.positive_class)
+        counts = (
+            self.true_negative,
+            self.false_positive,
+            self.false_negative,
+            self.true_positive,
+        )
+        if self.status is ConfusionMatrixStatus.CAPTURED:
+            if any(value is None for value in counts):
+                raise ValueError("Captured confusion matrices require all four counts")
+            for value in counts:
+                _strict_int(value, "confusion matrix count")
+                if value < 0:
+                    raise ValueError("Confusion matrix counts cannot be negative")
+            if self.reason is not None:
+                raise ValueError("Captured confusion matrices cannot contain a reason")
+        else:
+            if any(value is not None for value in counts):
+                raise ValueError("Unsupported confusion matrices cannot contain counts")
+            if self.reason is None:
+                raise ValueError("Unsupported confusion matrices require a reason")
+            _require_non_empty("unsupported confusion matrix reason", self.reason)
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "BinaryConfusionMatrix":
+        _reject_unknown(
+            raw,
+            {
+                "status",
+                "positive_class",
+                "true_negative",
+                "false_positive",
+                "false_negative",
+                "true_positive",
+                "reason",
+            },
+            "binary confusion matrix",
+        )
+        counts = {
+            name: (
+                None
+                if raw.get(name) is None
+                else _strict_int(raw.get(name), f"confusion matrix {name}")
+            )
+            for name in (
+                "true_negative",
+                "false_positive",
+                "false_negative",
+                "true_positive",
+            )
+        }
+        return cls(
+            status=_enum_value(
+                ConfusionMatrixStatus,
+                _string(raw, "status"),
+                "confusion matrix status",
+            ),
+            positive_class=_string(raw, "positive_class"),
+            reason=_optional_string(raw.get("reason")),
+            **counts,
+        )
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "status": self.status.value,
+            "positive_class": self.positive_class,
+            "true_negative": self.true_negative,
+            "false_positive": self.false_positive,
+            "false_negative": self.false_negative,
+            "true_positive": self.true_positive,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MetricArtifact:
     id: str
     metric_name: str
@@ -670,6 +766,7 @@ class MetricArtifact:
     cell_index: int | None = None
     sample_count: int | None = None
     parameters: Mapping[str, JsonValue] = field(default_factory=dict)
+    confusion_matrix: BinaryConfusionMatrix | None = None
     reason: str | None = None
 
     def __post_init__(self) -> None:
@@ -698,6 +795,10 @@ class MetricArtifact:
                 raise ValueError("Captured metrics require an observation method")
             if self.reason is not None:
                 raise ValueError("Captured metrics cannot contain an unsupported reason")
+            if self.confusion_matrix is not None and not isinstance(
+                self.confusion_matrix, BinaryConfusionMatrix
+            ):
+                raise TypeError("confusion_matrix must be BinaryConfusionMatrix")
         else:
             if self.capture_method is not MetricCaptureMethod.NOT_OBSERVED:
                 raise ValueError("Unsupported metrics must use method 'not_observed'")
@@ -705,6 +806,8 @@ class MetricArtifact:
                 raise ValueError("Unsupported metrics cannot contain observed values")
             if self.parameters:
                 raise ValueError("Unsupported metrics cannot contain parameters")
+            if self.confusion_matrix is not None:
+                raise ValueError("Unsupported metrics cannot contain confusion matrices")
             if self.reason is None:
                 raise ValueError("Unsupported metrics require a reason")
             _require_non_empty("unsupported metric reason", self.reason)
@@ -716,6 +819,26 @@ class MetricArtifact:
             _strict_int(self.sample_count, "metric sample_count")
             if self.sample_count < 0:
                 raise ValueError("metric sample_count cannot be negative")
+        if (
+            self.confusion_matrix is not None
+            and self.confusion_matrix.status is ConfusionMatrixStatus.CAPTURED
+            and self.sample_count is not None
+        ):
+            matrix_total = sum(
+                cast(
+                    tuple[int, int, int, int],
+                    (
+                        self.confusion_matrix.true_negative,
+                        self.confusion_matrix.false_positive,
+                        self.confusion_matrix.false_negative,
+                        self.confusion_matrix.true_positive,
+                    ),
+                )
+            )
+            if matrix_total != self.sample_count:
+                raise ValueError(
+                    "Confusion matrix counts must sum to metric sample_count"
+                )
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> "MetricArtifact":
@@ -730,6 +853,7 @@ class MetricArtifact:
                 "cell_index",
                 "sample_count",
                 "parameters",
+                "confusion_matrix",
                 "reason",
             },
             "metric artifact",
@@ -743,6 +867,7 @@ class MetricArtifact:
         sample_count = raw.get("sample_count")
         if sample_count is not None:
             sample_count = _strict_int(sample_count, "metric sample_count")
+        confusion_matrix = raw.get("confusion_matrix")
         return cls(
             id=_string(raw, "id"),
             metric_name=_string(raw, "metric_name"),
@@ -761,6 +886,13 @@ class MetricArtifact:
                 Mapping[str, JsonValue],
                 _mapping(raw.get("parameters", {}), "metric parameters"),
             ),
+            confusion_matrix=(
+                None
+                if confusion_matrix is None
+                else BinaryConfusionMatrix.from_dict(
+                    _mapping(confusion_matrix, "binary confusion matrix")
+                )
+            ),
             reason=_optional_string(raw.get("reason")),
         )
 
@@ -774,6 +906,11 @@ class MetricArtifact:
             "cell_index": self.cell_index,
             "sample_count": self.sample_count,
             "parameters": _thaw_mapping(self.parameters),
+            "confusion_matrix": (
+                None
+                if self.confusion_matrix is None
+                else self.confusion_matrix.to_dict()
+            ),
             "reason": self.reason,
         }
 
@@ -832,6 +969,7 @@ class ExecutionRequest:
     working_directory: str
     metric_selector: MetricSelector | None = None
     entity_column: str | None = None
+    positive_class: str | None = None
     limits: ResourceLimits = field(default_factory=ResourceLimits)
     network_enabled: bool = False
     schema_version: str = EXECUTION_SCHEMA_VERSION
@@ -859,6 +997,8 @@ class ExecutionRequest:
             raise TypeError("metric_selector must be MetricSelector")
         if self.entity_column is not None:
             _require_non_empty("entity_column", self.entity_column)
+        if self.positive_class is not None:
+            _require_non_empty("positive_class", self.positive_class)
         if not isinstance(self.network_enabled, bool):
             raise TypeError("network_enabled must be a boolean")
 
@@ -874,6 +1014,7 @@ class ExecutionRequest:
                 "working_directory",
                 "metric_selector",
                 "entity_column",
+                "positive_class",
                 "limits",
                 "network_enabled",
             },
@@ -900,6 +1041,7 @@ class ExecutionRequest:
                 )
             ),
             entity_column=_optional_string(raw.get("entity_column")),
+            positive_class=_optional_string(raw.get("positive_class")),
             limits=ResourceLimits.from_dict(
                 _mapping(_required(raw, "limits"), "resource limits")
             ),
@@ -917,6 +1059,7 @@ class ExecutionRequest:
                 None if self.metric_selector is None else self.metric_selector.to_dict()
             ),
             "entity_column": self.entity_column,
+            "positive_class": self.positive_class,
             "limits": self.limits.to_dict(),
             "network_enabled": self.network_enabled,
         }

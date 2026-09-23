@@ -60,6 +60,7 @@ def audit_experiment(
                         variable_name=config.primary_metric_variable,
                     ),
                     entity_column=config.entity_column,
+                    positive_class=config.positive_class,
                     limits=limits or ResourceLimits(),
                     network_enabled=False,
                 )

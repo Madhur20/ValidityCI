@@ -16,8 +16,8 @@ from nbclient import NotebookClient
 from nbclient.exceptions import CellExecutionError, CellTimeoutError
 
 
-SCHEMA_VERSION = "1.5.0"
-INSTRUMENTATION_SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = "1.6.0"
+INSTRUMENTATION_SCHEMA_VERSION = "1.3.0"
 _COLLECTOR_MARKER = "__VALIDITYCI_RUNTIME_V1__"
 _SUPPORTED_METRIC_FUNCTIONS = {
     "accuracy": "accuracy_score",
@@ -39,6 +39,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--metric-name", choices=sorted(_SUPPORTED_METRIC_FUNCTIONS))
     parser.add_argument("--metric-variable")
     parser.add_argument("--entity-column")
+    parser.add_argument("--positive-class")
     return parser
 
 
@@ -95,7 +96,9 @@ def _environment_fingerprint() -> dict[str, str]:
     }
 
 
-def _instrumentation_source(entity_column: str | None) -> str:
+def _instrumentation_source(
+    entity_column: str | None, positive_class: str | None
+) -> str:
     metric_functions = repr(_SUPPORTED_METRIC_FUNCTIONS)
     return f"""
 import functools as __validityci_functools
@@ -117,6 +120,7 @@ __validityci_fingerprint_key__ = __validityci_secrets.token_bytes(32)
 __validityci_fingerprint_scope_id__ = "scope." + __validityci_secrets.token_hex(16)
 __validityci_metric_functions__ = {metric_functions}
 __validityci_entity_column__ = {entity_column!r}
+__validityci_positive_class__ = {positive_class!r}
 __validityci_safe_parameters__ = {{
     "average", "pos_label", "zero_division", "multi_class", "max_fpr"
 }}
@@ -275,6 +279,84 @@ def __validityci_entity_overlap(split_inputs, split_outputs):
             "reason": "Entity overlap measurement failed: " + type(error).__name__,
         }}
 
+def __validityci_confusion_matrix(y_true, y_pred):
+    if __validityci_positive_class__ is None:
+        return {{
+            "status": "unsupported",
+            "positive_class": "unconfigured",
+            "reason": "No positive class was configured",
+        }}
+    try:
+        true_values = __validityci_numpy.asarray(y_true)
+        predicted_values = __validityci_numpy.asarray(y_pred)
+        if true_values.ndim != 1 or predicted_values.ndim != 1:
+            return {{
+                "status": "unsupported",
+                "positive_class": __validityci_positive_class__,
+                "reason": "Confusion matrix capture requires one-dimensional labels",
+            }}
+        if len(true_values) != len(predicted_values) or len(true_values) == 0:
+            return {{
+                "status": "unsupported",
+                "positive_class": __validityci_positive_class__,
+                "reason": "Targets and predictions must be non-empty and equally sized",
+            }}
+        labels = list(__validityci_pandas.unique(
+            __validityci_numpy.concatenate((true_values, predicted_values))
+        ))
+        if len(labels) > 2:
+            return {{
+                "status": "unsupported",
+                "positive_class": __validityci_positive_class__,
+                "reason": "Observed outputs were not binary class labels",
+            }}
+        positive_matches = [
+            label for label in labels
+            if str(label) == __validityci_positive_class__
+        ]
+        if len(positive_matches) > 1 or (
+            len(labels) == 2 and len(positive_matches) != 1
+        ):
+            return {{
+                "status": "unsupported",
+                "positive_class": __validityci_positive_class__,
+                "reason": "The configured positive class was not uniquely observed",
+            }}
+        if positive_matches:
+            positive = positive_matches[0]
+            true_positive_mask = true_values == positive
+            predicted_positive_mask = predicted_values == positive
+        else:
+            true_positive_mask = __validityci_numpy.zeros(
+                len(true_values), dtype=bool
+            )
+            predicted_positive_mask = __validityci_numpy.zeros(
+                len(predicted_values), dtype=bool
+            )
+        return {{
+            "status": "captured",
+            "positive_class": __validityci_positive_class__,
+            "true_negative": int(__validityci_numpy.sum(
+                ~true_positive_mask & ~predicted_positive_mask
+            )),
+            "false_positive": int(__validityci_numpy.sum(
+                ~true_positive_mask & predicted_positive_mask
+            )),
+            "false_negative": int(__validityci_numpy.sum(
+                true_positive_mask & ~predicted_positive_mask
+            )),
+            "true_positive": int(__validityci_numpy.sum(
+                true_positive_mask & predicted_positive_mask
+            )),
+            "reason": None,
+        }}
+    except Exception as error:
+        return {{
+            "status": "unsupported",
+            "positive_class": __validityci_positive_class__,
+            "reason": "Confusion matrix capture failed: " + type(error).__name__,
+        }}
+
 def __validityci_wrap_metric(__validityci_metric_name, __validityci_original):
     @__validityci_functools.wraps(__validityci_original)
     def __validityci_wrapped(*args, **kwargs):
@@ -296,6 +378,15 @@ def __validityci_wrap_metric(__validityci_metric_name, __validityci_original):
                 "cell_index": globals().get("__validityci_current_cell__"),
                 "sample_count": sample_count,
                 "parameters": parameters,
+                "confusion_matrix": (
+                    __validityci_confusion_matrix(args[0], args[1])
+                    if len(args) >= 2
+                    else {{
+                        "status": "unsupported",
+                        "positive_class": __validityci_positive_class__ or "unconfigured",
+                        "reason": "Metric inputs were unavailable",
+                    }}
+                ),
                 "capture_method": "runtime_wrapper",
             }})
             __validityci_record_event(
@@ -389,6 +480,11 @@ if __validityci_expected_metric__ and not __validityci_expected_seen__:
             "cell_index": None,
             "sample_count": None,
             "parameters": {{}},
+            "confusion_matrix": {{
+                "status": "unsupported",
+                "positive_class": globals().get("__validityci_positive_class__") or "unconfigured",
+                "reason": "Manifest-variable capture has no target or prediction arrays",
+            }},
             "capture_method": "manifest_variable",
         }})
     else:
@@ -422,10 +518,13 @@ def _prepare_notebook(
     metric_name: str | None,
     variable_name: str | None,
     entity_column: str | None,
+    positive_class: str | None,
 ) -> list[Any]:
     original_cells = list(notebook.cells)
     execution_cells = [
-        nbformat.v4.new_code_cell(_instrumentation_source(entity_column))
+        nbformat.v4.new_code_cell(
+            _instrumentation_source(entity_column, positive_class)
+        )
     ]
     for index, cell in enumerate(original_cells):
         if cell.get("cell_type") == "code":
@@ -475,6 +574,9 @@ def _extract_runtime(collector_cell: Any) -> tuple[list[dict[str, Any]], dict[st
                     "cell_index": None if unsupported else event.get("cell_index"),
                     "sample_count": None if unsupported else event.get("sample_count"),
                     "parameters": {} if unsupported else event.get("parameters", {}),
+                    "confusion_matrix": (
+                        None if unsupported else event.get("confusion_matrix")
+                    ),
                     "reason": event.get("reason") if unsupported else None,
                 }
             )
@@ -525,7 +627,11 @@ def main() -> None:
     try:
         notebook = nbformat.read(args.notebook, as_version=4)
         original_cells = _prepare_notebook(
-            notebook, args.metric_name, args.metric_variable, args.entity_column
+            notebook,
+            args.metric_name,
+            args.metric_variable,
+            args.entity_column,
+            args.positive_class,
         )
         client = NotebookClient(
             notebook,

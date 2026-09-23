@@ -545,7 +545,7 @@ Advancement depends on exit criteria, not elapsed weeks.
 
 ### 1. Versioned schemas — completed
 
-The report contract now uses schema version `1.5.0`, immutable slotted models, explicit round-trip serialization, controlled enums, unique identifiers, and evidence-reference validation. Execution records use their own `1.5.0` contract, and runtime traces have an independently versioned `1.2.0` contract.
+The report contract now uses schema version `1.6.0`, immutable slotted models, explicit round-trip serialization, controlled enums, unique identifiers, and evidence-reference validation. Execution records use their own `1.6.0` contract, and runtime traces have an independently versioned `1.3.0` contract.
 
 ### 2. Runner protocol — completed
 
@@ -575,11 +575,15 @@ The runner measures overlap when the configured entity column or named series is
 
 Transformer-fit events are compared with earlier supported split events and run-scoped fingerprints. Fitting before a split, on the full pre-split input, or on the test output produces a blocking finding; unknown lineage is `review`, and missing instrumentation is `unsupported` rather than pass.
 
-### 9. Group-split counterfactual
+### 9. Binary confusion-matrix evidence — initial supported implementation completed
+
+Supported runtime metric calls now retain aggregate true-negative, false-positive, false-negative, and true-positive counts relative to the manifest positive class. One-class evaluation slices are valid binary evidence with zero counts for the absent class; continuous-score, multiclass, and manifest-variable paths preserve an unsupported reason without exposing labels or predictions.
+
+### 10. Group-split counterfactual
 
 Create reversible execution lineage and show metric changes without modifying the source notebook.
 
-### 10. Investigator benchmark before agent code
+### 11. Investigator benchmark before agent code
 
 Define expected summaries and reviewer questions for at least 10 cases. The future agent must beat the deterministic baseline on usefulness without reducing factual support.
 

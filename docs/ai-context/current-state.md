@@ -13,19 +13,19 @@ ValidityCI is an independent, local-first validation gate for notebook-based tab
 - Runner protocol plus deterministic fake runner for fast orchestration tests.
 - Restricted Docker execution with declared-input staging, network denial, non-root execution, read-only root/input, and CPU, memory, process, output, cell, and wall-time limits.
 - Structured cell failures, timeouts, runner failures, normalized user-output fingerprints, and cleanup of timed-out containers.
-- Structured capture for six scikit-learn metrics with one explicit manifest-variable fallback.
+- Structured capture for six scikit-learn metrics, privacy-minimized binary confusion counts, and one explicit manifest-variable fallback.
 - Two fresh executions by default, environment fingerprints, and separate metric/output/environment comparisons.
 - Versioned runtime events for supported split, fit, transform, predict, and metric calls with original cell attribution.
 - Run-scoped HMAC data lineage containing types and shapes but no serialized row values or retained key.
-- Sixty-one dependency-free unit tests plus live Docker verification of clean and intentionally flawed entity and preprocessing cases.
+- Sixty-six dependency-free unit tests plus live Docker verification of entity overlap, preprocessing scope, and aggregate confusion-matrix capture.
 
 ## Versions
 
 - Package version: `0.1.0` (packaging has not yet been aligned with runner milestones).
-- Default runner image: `validityci-runner:0.4.1`.
-- Audit report schema: `1.5.0`.
-- Execution request/result schema: `1.5.0`.
-- Runtime instrumentation schema: `1.2.0`.
+- Default runner image: `validityci-runner:0.4.2`.
+- Audit report schema: `1.6.0`.
+- Execution request/result schema: `1.6.0`.
+- Runtime instrumentation schema: `1.3.0`.
 
 Schema constants in `src/validityci/schemas/__init__.py` and `docker/runner/execute_notebook.py` are authoritative if this document becomes stale.
 
@@ -35,7 +35,7 @@ Schema constants in `src/validityci/schemas/__init__.py` and `docker/runner/exec
 - Fixed runner dependencies; no arbitrary installation, services, databases, GPUs, distributed execution, or network access.
 - Runtime lineage covers `train_test_split` and methods inherited through scikit-learn `BaseEstimator`; custom and third-party operations are not observed.
 - Entity overlap requires the configured entity DataFrame column or named Series to be passed to the supported split; otherwise the check is explicitly unsupported.
-- Metric wrappers cover six named functions. Estimator `.score`, aliases imported before setup, custom functions, and third-party metrics need adapters or the manifest fallback.
+- Metric wrappers cover six named functions. Binary label-valued calls receive aggregate confusion counts; continuous scores, multiclass inputs, estimator `.score`, aliases imported before setup, custom functions, and third-party metrics need explicit handling or the manifest fallback.
 - `fit_transform` produces nested fit, transform, and enclosing fit-transform completion events.
 - HMAC fingerprints are comparable only inside one execution; repeated runs compare event structure, metrics, outputs, and environments.
 - Docker materially reduces exposure but is not a sufficient boundary for hostile multi-tenant workloads.
@@ -46,8 +46,8 @@ Schema constants in `src/validityci/schemas/__init__.py` and `docker/runner/exec
 
 The next deterministic-check work is:
 
-1. Expanded metric evidence such as confusion-matrix values.
-2. Severity/confidence policy refinement and broader permanent regression benchmarks.
-3. Multiple-split/cross-validation lineage policies and adapter coverage.
+1. Severity/confidence policy refinement and broader permanent regression benchmarks.
+2. Multiple-split/cross-validation lineage policies and adapter coverage.
+3. Group-isolated counterfactual execution.
 
 Do not add an AI investigator before deterministic checks and an investigator evaluation benchmark exist.

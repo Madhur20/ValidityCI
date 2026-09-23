@@ -10,6 +10,8 @@ from validityci.runner import FakeRunner, Runner
 from validityci.reporting import write_html
 from validityci.schemas import (
     AuditStatus,
+    BinaryConfusionMatrix,
+    ConfusionMatrixStatus,
     ExecutionFailure,
     ExecutionRequest,
     ExecutionResult,
@@ -37,6 +39,7 @@ class ExecutionSchemaTests(unittest.TestCase):
                 metric_name="accuracy", variable_name="accuracy"
             ),
             entity_column="customer_id",
+            positive_class="1",
         )
         result = ExecutionResult(
             execution_id="execution.original",
@@ -55,6 +58,7 @@ class ExecutionSchemaTests(unittest.TestCase):
 
         self.assertEqual(restored_request, request)
         self.assertEqual(restored_request.entity_column, "customer_id")
+        self.assertEqual(restored_request.positive_class, "1")
         self.assertEqual(restored_result, result)
 
     def test_unsupported_metric_round_trips_without_a_value(self) -> None:
@@ -113,6 +117,14 @@ class ExecutionSchemaTests(unittest.TestCase):
             value=0.9,
             cell_index=1,
             sample_count=10,
+            confusion_matrix=BinaryConfusionMatrix(
+                status=ConfusionMatrixStatus.CAPTURED,
+                positive_class="1",
+                true_negative=7,
+                false_positive=1,
+                false_negative=0,
+                true_positive=2,
+            ),
         )
 
 
@@ -359,6 +371,8 @@ class RunnerOrchestrationTests(unittest.TestCase):
         self.assertIn("accuracy", rendered)
         self.assertIn("0.9", rendered)
         self.assertIn("10 samples", rendered)
+        self.assertIn("TN 7", rendered)
+        self.assertIn("TP 2", rendered)
 
     @staticmethod
     def _audit(

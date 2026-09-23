@@ -75,6 +75,20 @@ def write_html(report: AuditReport, path: str | Path) -> None:
                     f"<code>{metric.value:.12g}</code>{location}{sample_count} "
                     f"· {escape(metric.capture_method.replace('_', ' '))}"
                 )
+                if metric.confusion_matrix is not None:
+                    confusion = metric.confusion_matrix
+                    if confusion.status == "captured":
+                        metric_detail += (
+                            "<br>Binary confusion matrix "
+                            f"(positive class <code>{escape(confusion.positive_class)}</code>): "
+                            f"TN {confusion.true_negative} · FP {confusion.false_positive} · "
+                            f"FN {confusion.false_negative} · TP {confusion.true_positive}"
+                        )
+                    else:
+                        metric_detail += (
+                            "<br>Confusion matrix unavailable: "
+                            f"{escape(confusion.reason or 'unsupported')}"
+                        )
             metric_items.append(
                 f"<li><strong>{escape(metric.metric_name)}</strong>: "
                 f"{metric_detail}</li>"

@@ -25,7 +25,7 @@ git diff --check
 Build the pinned runner:
 
 ```bash
-docker build -f docker/runner/Dockerfile -t validityci-runner:0.4.1 .
+docker build -f docker/runner/Dockerfile -t validityci-runner:0.4.2 .
 ```
 
 Exercise every supported runtime event:
@@ -49,6 +49,7 @@ Use explicit `/tmp` paths for smoke-test reports so existing ignored files under
 | `tests/test_runner.py` | Execution schemas, fake runner behavior, orchestration statuses, metrics, and execution reporting. |
 | `tests/test_docker_runner.py` | Input staging, Docker security flags, timeout cleanup, and structured host-side errors. |
 | `tests/test_entity_overlap.py` | Entity-overlap outcomes, privacy-minimized evidence, unsupported behavior, and check-result contracts. |
+| `tests/test_confusion_matrix.py` | Confusion-matrix schema invariants, round trips, unsupported states, and absence of target/prediction arrays. |
 | `tests/test_preprocessing_order.py` | Transformer fit-scope outcomes, ambiguous/unsupported lineage, repeated executions, and privacy-minimized evidence. |
 | `tests/test_reproducibility.py` | Metric/output/environment comparison and audit findings for divergence. |
 | `tests/test_runtime_instrumentation.py` | Trace versions, event ordering, privacy fields, and JSON round trips. |

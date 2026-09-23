@@ -61,7 +61,7 @@ Each component below is described in one or two lines, with its primary implemen
 | Fake runner | Returns preconfigured immutable results for fast orchestration and failure tests without requiring Docker. | `src/validityci/runner/fake.py` |
 | Docker runner | Stages only declared inputs, applies isolation/resource flags, starts the pinned image, bounds results, and converts launch problems into structured failures. | `src/validityci/runner/docker.py` |
 | Container entry point | Executes the notebook with `nbclient`, injects hidden instrumentation cells, normalizes outputs, and emits a versioned result JSON. | `docker/runner/execute_notebook.py` |
-| Metric capture | Wraps six supported `sklearn.metrics` functions before user imports and falls back to one explicitly named finite variable when necessary. | Container instrumentation source |
+| Metric capture | Wraps six supported `sklearn.metrics` functions, captures scalar results and privacy-minimized binary confusion counts, and falls back to one explicitly named finite variable when necessary. | Container instrumentation source |
 | Runtime instrumentation | Observes supported split and `BaseEstimator` method calls, attaches original cell indexes, and records ordered input/output lineage events. | Container instrumentation source |
 | Data fingerprinting | Uses a fresh per-execution HMAC key over canonical data representations so data can be linked within a run without serializing rows or exporting the key. | Container instrumentation source |
 | Output fingerprinting | Hashes normalized user-cell outputs after removing synthetic cells and transient execution metadata. | Container entry point |
@@ -97,6 +97,7 @@ Individual deterministic checks separately use `pass`, `fail`, `review`, `not_ap
 - One local CSV and binary-classification manifest.
 - `train_test_split`, scikit-learn estimator/transformer `fit`, `fit_transform`, `transform`, and `predict` events.
 - `accuracy`, `balanced_accuracy`, `f1`, `precision`, `recall`, and `roc_auc` metric wrappers.
+- Aggregate binary confusion matrices for label-valued metric calls using the configured positive class; unsupported score/multiclass inputs remain explicit.
 - Static metric suitability, repeated execution comparison, JSON reporting, and HTML reporting.
 - Aggregate entity-overlap detection when the configured entity column participates in a supported split.
 - Preprocessing fit-scope detection for supported scikit-learn transformers and `train_test_split` lineage.
@@ -118,7 +119,7 @@ PYTHONPATH=src python3 -m validityci audit examples/imbalanced_churn.ipynb \
 Build and use the restricted runner:
 
 ```bash
-docker build -f docker/runner/Dockerfile -t validityci-runner:0.4.1 .
+docker build -f docker/runner/Dockerfile -t validityci-runner:0.4.2 .
 PYTHONPATH=src python3 -m validityci audit examples/runtime_instrumentation.ipynb \
   --data examples/customer_churn.csv \
   --config examples/validityci.toml \

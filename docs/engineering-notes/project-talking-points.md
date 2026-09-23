@@ -2,7 +2,7 @@
 
 ## Thirty-second explanation
 
-ValidityCI is an independent validation gate for machine-learning experiments. Instead of reviewing whether notebook code looks reasonable, it executes a declared experiment twice in fresh restricted environments and builds evidence about what actually happened. The current system compares normalized metrics, notebook outputs, and environment fingerprints; it captures versioned, privacy-minimized lineage events and can block configured entity overlap or supported preprocessing fitted before splitting or on evaluation data. The next work is richer metric evidence and policy refinement.
+ValidityCI is an independent validation gate for machine-learning experiments. Instead of reviewing whether notebook code looks reasonable, it executes a declared experiment twice in fresh restricted environments and builds evidence about what actually happened. The current system compares normalized metrics, notebook outputs, and environment fingerprints; it captures privacy-minimized lineage, aggregate confusion counts, and blocking evidence for configured entity overlap or supported preprocessing leakage. The next work is severity-policy refinement and broader regression coverage.
 
 ## Why this is not another AI code reviewer
 
@@ -22,6 +22,7 @@ The important failures in ML experiments are often methodological rather than sy
 10. Runtime traces use a separate schema and run-scoped HMAC fingerprints, so downstream checks can follow data flow without storing rows or exporting the key.
 11. Entity overlap is computed beside the data inside the temporary kernel; only counts and rates enter the evidence report.
 12. Transformer fit scope is classified from same-run split lineage; confirmed pre-split/full/test fitting is blocking, while ambiguity remains review or unsupported.
+13. Binary metric evidence adds `TN`, `FP`, `FN`, and `TP` inside the kernel without exporting target or prediction arrays.
 
 ## Useful deep-dive questions
 
@@ -57,7 +58,7 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 
 - The supported execution environment is intentionally limited to Python, pandas, and scikit-learn.
 - Deterministic checks currently cover metric suitability for imbalanced binary classification, entity overlap, and preprocessing fit scope for supported splits.
-- Runtime capture currently covers six scikit-learn metric functions; estimator `.score`, custom functions, and third-party metric libraries need explicit support or the manifest fallback.
+- Runtime capture currently covers six scikit-learn metric functions and aggregate binary confusion counts for label-valued calls; continuous-score confusion evidence, estimator `.score`, custom functions, and third-party metric libraries need explicit support or the manifest fallback.
 - Runtime lineage covers scikit-learn `train_test_split` and `BaseEstimator` fit/transform/predict methods. Custom and third-party operations are outside the initial adapter and cannot yet be detected as observed-but-unsupported calls.
 - Entity overlap is supported only when the configured entity column or named series is explicitly passed through `train_test_split`; otherwise the check is `unsupported` rather than inferred.
 - Output comparison detects a changed normalized output but does not yet localize the first differing cell or value.
@@ -74,7 +75,7 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 5. Show the normalized `accuracy = 0.9` artifact, its original cell, and its 20-sample count.
 6. Show a seeded stable run marked `reproduced` across metric, output, and environment.
 7. Show an unseeded run with its metric delta and reproducibility finding.
-8. Show the runtime benchmark's ordered events and clean entity/preprocessing results, then the entity-overlap and pre-split preprocessing benchmarks with their blocking findings. End with the next milestone: confusion-matrix evidence and severity-policy refinement.
+8. Show the runtime benchmark's ordered events, clean entity/preprocessing results, and aggregate confusion matrix; then show the entity-overlap and pre-split preprocessing benchmarks with their blocking findings. End with severity-policy refinement and broader regression benchmarks.
 
 ## Claims to avoid
 

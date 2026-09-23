@@ -88,7 +88,9 @@ Current response: supported runtime events use run-scoped HMAC fingerprints. The
 
 `0.90` is not useful evidence unless the report knows the metric, positive class, averaging method, split, sample count, and possibly threshold.
 
-Possible response: define a normalized metric artifact before adding more checks. Missing semantic fields should produce `unsupported` or `review`, never an inferred pass.
+Current response: normalized runtime metric artifacts include the operation, scalar value, cell, sample count, safe parameters, and aggregate binary confusion counts when label-valued inputs can be interpreted against the configured positive class. Target and prediction arrays are not retained. Continuous-score, multiclass, and fallback-variable paths keep an explicit unsupported reason for confusion evidence.
+
+Future response: add reviewed threshold, subgroup, and averaging semantics without turning reports into row-level prediction stores. Missing semantic fields should produce `unsupported` or `review`, never an inferred pass.
 
 ## Product ideas
 

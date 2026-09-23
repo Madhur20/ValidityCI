@@ -42,7 +42,7 @@ The example intentionally declares `accuracy` as its primary metric for an imbal
 Build the pinned runner environment once:
 
 ```bash
-docker build -f docker/runner/Dockerfile -t validityci-runner:0.4.1 .
+docker build -f docker/runner/Dockerfile -t validityci-runner:0.4.2 .
 ```
 
 Then opt in to execution:
@@ -62,11 +62,11 @@ The runner stages only the declared notebook and data files. The container has n
 
 The initial image supports Python notebooks using pandas and scikit-learn. Notebooks that require other packages are reported as execution failures; arbitrary dependency installation and network access are intentionally unsupported.
 
-For supported scikit-learn metrics, an execution record includes the metric name, value, original notebook cell, sample count, capture method, and safe scalar parameters. An optional `primary_metric_variable` in the experiment manifest provides a fallback for custom metric code. If neither a supported call nor a finite fallback variable can be observed, the metric is reported as `unsupported` rather than inferred.
+For supported scikit-learn metrics, an execution record includes the metric name, value, original notebook cell, sample count, capture method, and safe scalar parameters. Binary label metrics also include aggregate `TN`, `FP`, `FN`, and `TP` counts relative to the configured positive class; target and prediction arrays are never serialized. Continuous-score, multiclass, or otherwise unsupported inputs retain an explicit reason. An optional `primary_metric_variable` in the experiment manifest provides a fallback for custom metric code. If neither a supported call nor a finite fallback variable can be observed, the metric is reported as `unsupported` rather than inferred.
 
 Each successful run also records an aggregate environment fingerprint derived from the Python runtime, operating system, machine architecture, runner code, and installed package names and versions. Reports preserve the three comparison signals separately: equal metrics do not hide changed notebook outputs, and equal outputs do not hide an environment change.
 
-The `0.4.1` runner includes a separately versioned runtime trace for supported scikit-learn train/test splits, estimator and transformer fitting, transformations, predictions, and metric calls. Every event points to the original notebook cell and includes only operation metadata, shapes, object classification, and run-scoped HMAC fingerprints. Raw data values and the fingerprint key are never written to the execution result.
+The `0.4.2` runner includes a separately versioned runtime trace for supported scikit-learn train/test splits, estimator and transformer fitting, transformations, predictions, and metric calls. Every event points to the original notebook cell and includes only operation metadata, shapes, object classification, and run-scoped HMAC fingerprints. Raw data values and the fingerprint key are never written to the execution result.
 
 When `entity_column` is configured and that column or named series is passed to `train_test_split`, the runner computes aggregate train/test entity overlap inside the kernel. A confirmed overlap produces a blocking, high-confidence finding; reports contain only unique counts, overlap count, and overlap rate—not entity values or entity-level hashes.
 

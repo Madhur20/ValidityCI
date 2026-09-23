@@ -35,7 +35,7 @@ Custom split functions, non-scikit-learn estimators, estimator `score`, and thir
 
 - Detect entity overlap across train and test partitions — initial supported implementation completed
 - Detect preprocessing fitted before a split or on evaluation data — initial supported implementation completed
-- Expand metric checks with confusion-matrix evidence
+- Expand metric checks with confusion-matrix evidence — initial supported implementation completed
 - Add explicit check statuses — implemented
 - Expand severity and confidence policies
 
