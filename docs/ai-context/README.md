@@ -16,6 +16,8 @@ For rationale behind a specific decision, search [the decision log](../engineeri
 
 ValidityCI statically inspects a declared tabular-classification notebook and can optionally execute it twice in fresh restricted Docker containers. It produces immutable evidence about the dataset, supported metrics, normalized outputs, runtime environment, reproducibility, and supported data-flow events; deterministic code—not an LLM—determines findings and audit status.
 
+Investigator work is gated by the versioned 13-case benchmark in `benchmarks/investigator/`, which scores factual support separately from added reviewer usefulness. The implemented provider-neutral boundary validates structured output and report-scoped citations, then falls back to a deterministic summary on rejection; no external model is connected.
+
 ## Non-negotiable principles
 
 - Evidence before explanation; never invent observations from source appearance alone.

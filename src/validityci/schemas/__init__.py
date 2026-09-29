@@ -14,7 +14,7 @@ import tomllib
 
 REPORT_SCHEMA_VERSION = "1.9.0"
 EXECUTION_SCHEMA_VERSION = "1.8.0"
-INSTRUMENTATION_SCHEMA_VERSION = "1.5.0"
+INSTRUMENTATION_SCHEMA_VERSION = "1.6.0"
 SUPPORTED_TASKS = frozenset({"binary_classification"})
 SUPPORTED_METRICS = frozenset(
     {"accuracy", "balanced_accuracy", "f1", "precision", "recall", "roc_auc"}

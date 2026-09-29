@@ -1,0 +1,587 @@
+{
+  "schema_version": "1.0.0",
+  "cases": [
+    {
+      "id": "static_accuracy_imbalance",
+      "title": "Accuracy on an imbalanced target",
+      "category": "flawed",
+      "fixture": "examples/imbalanced_churn.ipynb",
+      "expected_audit_status": "attention_required",
+      "expected_check_statuses": {},
+      "allowed_evidence_ids": ["evidence.class_distribution"],
+      "observations": [
+        {
+          "id": "accuracy_imbalance_finding",
+          "summary": "The declared accuracy metric may hide minority-class failures.",
+          "evidence_ids": ["evidence.class_distribution"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "class_costs_unresolved",
+          "summary": "The evidence does not establish the relative cost of false positives and false negatives.",
+          "evidence_ids": ["evidence.class_distribution"],
+          "deterministic_baseline": false
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_error_costs",
+          "question": "What are the operational costs of false positives and false negatives?",
+          "rationale": "Metric selection depends on domain error costs."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_metric_objective",
+          "summary": "The business objective used to choose accuracy is unknown."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_model_invalid",
+          "claim": "The model is invalid solely because the target is imbalanced."
+        }
+      ]
+    },
+    {
+      "id": "clean_supported_holdout",
+      "title": "Clean supported holdout execution",
+      "category": "clean",
+      "fixture": "benchmarks/investigator/fixtures/clean_supported_holdout.json",
+      "expected_audit_status": "passed_supported_checks",
+      "expected_check_statuses": {
+        "split.entity_overlap": "pass",
+        "preprocessing.fit_scope": "pass"
+      },
+      "allowed_evidence_ids": [
+        "evidence.entity_overlap",
+        "evidence.preprocessing_fit_scope"
+      ],
+      "observations": [
+        {
+          "id": "supported_splits_clean",
+          "summary": "No entity overlap was measured in the supported split.",
+          "evidence_ids": ["evidence.entity_overlap"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "training_only_preprocessing",
+          "summary": "Supported transformers were fitted only on captured training data.",
+          "evidence_ids": ["evidence.preprocessing_fit_scope"],
+          "deterministic_baseline": true
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_external_validity",
+          "question": "Does this evaluation population match the intended deployment population?",
+          "rationale": "Passing supported leakage checks does not establish external validity."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_population_match",
+          "summary": "Population and deployment representativeness were not evaluated."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_universally_valid",
+          "claim": "Passing the supported checks proves the experiment is universally valid."
+        }
+      ]
+    },
+    {
+      "id": "entity_overlap_holdout",
+      "title": "Repeated entities cross a row-level holdout split",
+      "category": "flawed",
+      "fixture": "examples/entity_overlap.ipynb",
+      "expected_audit_status": "attention_required",
+      "expected_check_statuses": {
+        "split.entity_overlap": "fail",
+        "preprocessing.fit_scope": "not_applicable"
+      },
+      "allowed_evidence_ids": [
+        "evidence.class_distribution",
+        "evidence.entity_overlap"
+      ],
+      "observations": [
+        {
+          "id": "confirmed_entity_overlap",
+          "summary": "Configured entities occur in both training and test partitions.",
+          "evidence_ids": ["evidence.entity_overlap"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "accuracy_also_requires_review",
+          "summary": "Accuracy is also questionable for the imbalanced target.",
+          "evidence_ids": ["evidence.class_distribution"],
+          "deterministic_baseline": true
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_entity_boundary",
+          "question": "Is customer-level isolation the intended deployment boundary?",
+          "rationale": "The configured entity semantics should match the real prediction scenario."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_deployment_entity",
+          "summary": "The report cannot prove that the configured entity is the correct deployment boundary."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_overlap_quantifies_bias",
+          "claim": "The overlap count alone quantifies the amount of metric inflation."
+        }
+      ]
+    },
+    {
+      "id": "preprocessing_before_holdout",
+      "title": "Preprocessing fitted before the holdout split",
+      "category": "flawed",
+      "fixture": "examples/preprocessing_leakage.ipynb",
+      "expected_audit_status": "attention_required",
+      "expected_check_statuses": {
+        "split.entity_overlap": "pass",
+        "preprocessing.fit_scope": "fail"
+      },
+      "allowed_evidence_ids": [
+        "evidence.entity_overlap",
+        "evidence.preprocessing_fit_scope"
+      ],
+      "observations": [
+        {
+          "id": "confirmed_preprocessing_leakage",
+          "summary": "A supported transformer was fitted before the split on pre-split data.",
+          "evidence_ids": ["evidence.preprocessing_fit_scope"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "entity_isolation_clean",
+          "summary": "The supported holdout measurement did not find entity overlap.",
+          "evidence_ids": ["evidence.entity_overlap"],
+          "deterministic_baseline": true
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_pipeline_refit",
+          "question": "Can the model be rerun with preprocessing fitted only on training data?",
+          "rationale": "A clean rerun is needed to measure the effect of the leakage."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_leakage_impact",
+          "summary": "The captured lineage confirms leakage but does not quantify its metric impact."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_reproducibility_cures_leakage",
+          "claim": "A reproducible metric makes the preprocessing leakage acceptable."
+        }
+      ]
+    },
+    {
+      "id": "repeated_execution_divergence",
+      "title": "Fresh executions diverge",
+      "category": "flawed",
+      "fixture": "benchmarks/investigator/fixtures/reproducibility_divergence.json",
+      "expected_audit_status": "attention_required",
+      "expected_check_statuses": {},
+      "allowed_evidence_ids": ["evidence.reproducibility.comparison"],
+      "observations": [
+        {
+          "id": "execution_diverged",
+          "summary": "Two fresh observed executions produced a reproducibility mismatch.",
+          "evidence_ids": ["evidence.reproducibility.comparison"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "cause_not_established",
+          "summary": "The comparison does not by itself establish the cause of divergence.",
+          "evidence_ids": ["evidence.reproducibility.comparison"],
+          "deterministic_baseline": false
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_randomness_sources",
+          "question": "Which randomness, ordering, parallelism, or external-state sources remain uncontrolled?",
+          "rationale": "The comparison identifies divergence but does not localize its cause."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_divergence_cause",
+          "summary": "The source and practical significance of the divergence remain unknown."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_environment_changed",
+          "claim": "The software environment changed unless the environment signal specifically mismatched."
+        }
+      ]
+    },
+    {
+      "id": "notebook_cell_failure",
+      "title": "Notebook execution fails in a user cell",
+      "category": "failure",
+      "fixture": "benchmarks/investigator/fixtures/notebook_cell_failure.json",
+      "expected_audit_status": "incomplete",
+      "expected_check_statuses": {
+        "split.entity_overlap": "error",
+        "preprocessing.fit_scope": "error"
+      },
+      "allowed_evidence_ids": ["execution.original"],
+      "observations": [
+        {
+          "id": "execution_incomplete",
+          "summary": "The requested execution failed and the audit is incomplete.",
+          "evidence_ids": ["execution.original"],
+          "deterministic_baseline": true
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_failure_reproduction",
+          "question": "Which declared dependency or notebook state is required by the failing cell?",
+          "rationale": "A clean execution must succeed before runtime validity evidence is complete."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_result_validity",
+          "summary": "No conclusion about the unexecuted runtime checks is supported."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_failure_is_invalidity",
+          "claim": "Infrastructure or notebook failure proves the experiment is methodologically invalid."
+        }
+      ]
+    },
+    {
+      "id": "unsupported_primary_metric",
+      "title": "Primary metric cannot be captured",
+      "category": "unsupported",
+      "fixture": "benchmarks/investigator/fixtures/unsupported_primary_metric.json",
+      "expected_audit_status": "incomplete",
+      "expected_check_statuses": {},
+      "allowed_evidence_ids": ["execution.original/metric.1"],
+      "observations": [
+        {
+          "id": "metric_capture_unsupported",
+          "summary": "The configured primary metric was not captured through a supported path.",
+          "evidence_ids": ["execution.original/metric.1"],
+          "deterministic_baseline": true
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_metric_provenance",
+          "question": "Can the metric be exposed through a supported function or explicit manifest variable?",
+          "rationale": "The audit needs finite metric evidence with known provenance."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_metric_value",
+          "summary": "The primary result cannot be verified from captured evidence."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_metric_passed",
+          "claim": "An unobserved primary metric passed validation."
+        }
+      ]
+    },
+    {
+      "id": "clean_group_cross_validation",
+      "title": "Group-isolated cross-validation with fold-local preprocessing",
+      "category": "clean",
+      "fixture": "examples/cross_validation.ipynb",
+      "expected_audit_status": "attention_required",
+      "expected_check_statuses": {
+        "split.entity_overlap": "pass",
+        "preprocessing.fit_scope": "pass"
+      },
+      "allowed_evidence_ids": [
+        "evidence.class_distribution",
+        "evidence.entity_overlap",
+        "evidence.preprocessing_fit_scope"
+      ],
+      "observations": [
+        {
+          "id": "all_cv_folds_entity_clean",
+          "summary": "Every captured cross-validation fold had zero configured-entity overlap.",
+          "evidence_ids": ["evidence.entity_overlap"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "all_cv_folds_preprocessing_clean",
+          "summary": "Supported preprocessing fits matched fold-training partitions.",
+          "evidence_ids": ["evidence.preprocessing_fit_scope"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "accuracy_context_warning",
+          "summary": "The declared accuracy metric still requires class-imbalance review.",
+          "evidence_ids": ["evidence.class_distribution"],
+          "deterministic_baseline": true
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_cv_metric_choice",
+          "question": "Which class-sensitive metric should be primary across the folds?",
+          "rationale": "Clean fold lineage does not resolve metric suitability."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_cv_generalization",
+          "summary": "Two clean folds do not establish performance on the deployment population."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_cv_proves_generalization",
+          "claim": "Clean captured folds prove future generalization."
+        }
+      ]
+    },
+    {
+      "id": "cross_validation_preprocessing_leakage",
+      "title": "Preprocessing fitted before cross-validation",
+      "category": "flawed",
+      "fixture": "examples/cross_validation_leakage.ipynb",
+      "expected_audit_status": "attention_required",
+      "expected_check_statuses": {
+        "split.entity_overlap": "pass",
+        "preprocessing.fit_scope": "fail"
+      },
+      "allowed_evidence_ids": [
+        "evidence.entity_overlap",
+        "evidence.preprocessing_fit_scope"
+      ],
+      "observations": [
+        {
+          "id": "cv_entities_isolated",
+          "summary": "Group isolation passed for every captured fold.",
+          "evidence_ids": ["evidence.entity_overlap"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "cv_preprocessing_leaked",
+          "summary": "The transformer was fitted before fold generation on full data.",
+          "evidence_ids": ["evidence.preprocessing_fit_scope"],
+          "deterministic_baseline": true
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_pipeline_encapsulation",
+          "question": "Can preprocessing be moved into a pipeline fitted independently in every fold?",
+          "rationale": "Fold-local fitting removes the confirmed preprocessing leakage."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_cv_leakage_impact",
+          "summary": "The metric effect of correcting preprocessing has not been measured."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_group_cv_prevents_all_leakage",
+          "claim": "Group-based cross-validation prevents preprocessing leakage automatically."
+        }
+      ]
+    },
+    {
+      "id": "parallel_cross_validation_lineage",
+      "title": "Parallel cross-validation hides worker-side preprocessing events",
+      "category": "unsupported",
+      "fixture": "examples/cross_validation_parallel.ipynb",
+      "expected_audit_status": "incomplete",
+      "expected_check_statuses": {
+        "split.entity_overlap": "pass",
+        "preprocessing.fit_scope": "unsupported"
+      },
+      "allowed_evidence_ids": [
+        "evidence.entity_overlap",
+        "preprocessing.fit_scope"
+      ],
+      "observations": [
+        {
+          "id": "parallel_cv_entities_observed",
+          "summary": "Parent-process fold evidence supports the entity-overlap result.",
+          "evidence_ids": ["evidence.entity_overlap"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "parallel_preprocessing_unsupported",
+          "summary": "Worker-side preprocessing lineage was unavailable, so preprocessing analysis is unsupported.",
+          "evidence_ids": ["preprocessing.fit_scope"],
+          "deterministic_baseline": true
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_serial_cv_rerun",
+          "question": "Can this audit be rerun with in-process cross-validation?",
+          "rationale": "Serial execution would make transformer events observable to the current adapter."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_parallel_fit_scope",
+          "summary": "The current evidence cannot establish where worker-side transformers were fitted."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_no_preprocessing_observed_means_none",
+          "claim": "Missing worker events prove that no preprocessing occurred."
+        }
+      ]
+    },
+    {
+      "id": "group_isolated_counterfactual",
+      "title": "Observed row split compared with group isolation",
+      "category": "counterfactual",
+      "fixture": "examples/entity_overlap.ipynb#group_counterfactual",
+      "expected_audit_status": "attention_required",
+      "expected_check_statuses": {
+        "split.entity_overlap": "fail",
+        "preprocessing.fit_scope": "not_applicable"
+      },
+      "allowed_evidence_ids": [
+        "evidence.entity_overlap",
+        "evidence.counterfactual.group_isolated"
+      ],
+      "observations": [
+        {
+          "id": "observed_entity_overlap_confirmed",
+          "summary": "The observed row split placed configured entities in both partitions.",
+          "evidence_ids": ["evidence.entity_overlap"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "counterfactual_metric_compared",
+          "summary": "A separately labeled group-isolated execution produced a signed metric delta.",
+          "evidence_ids": ["evidence.counterfactual.group_isolated"],
+          "deterministic_baseline": true
+        },
+        {
+          "id": "counterfactual_not_causal_proof",
+          "summary": "One controlled split change does not establish a general causal effect.",
+          "evidence_ids": ["evidence.counterfactual.group_isolated"],
+          "deterministic_baseline": false
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_counterfactual_stability",
+          "question": "Does the metric difference persist across reviewed group-isolated seeds or folds?",
+          "rationale": "One partition can be an unstable estimate of the intervention effect."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_counterfactual_generality",
+          "summary": "The observed delta may depend on the single generated group partition."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_counterfactual_proves_inflation",
+          "claim": "The single metric delta proves the exact amount of leakage inflation."
+        }
+      ]
+    },
+    {
+      "id": "counterfactual_not_transformable",
+      "title": "Requested counterfactual cannot transform the split",
+      "category": "unsupported",
+      "fixture": "benchmarks/investigator/fixtures/counterfactual_not_transformable.json",
+      "expected_audit_status": "incomplete",
+      "expected_check_statuses": {},
+      "allowed_evidence_ids": ["evidence.counterfactual.group_isolated"],
+      "observations": [
+        {
+          "id": "counterfactual_incomplete",
+          "summary": "No supported split transformation was applied, so the comparison is incomplete.",
+          "evidence_ids": ["evidence.counterfactual.group_isolated"],
+          "deterministic_baseline": true
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_split_adapter",
+          "question": "Which split implementation and entity input does this notebook use?",
+          "rationale": "A specific adapter is required before a controlled transformation can be claimed."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_counterfactual_result",
+          "summary": "No corrected metric is available from the requested intervention."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_missing_counterfactual_is_no_effect",
+          "claim": "Failure to run the counterfactual means group isolation has no effect."
+        }
+      ]
+    },
+    {
+      "id": "ambiguous_transformer_lineage",
+      "title": "Transformer fit input does not match captured partitions",
+      "category": "ambiguous",
+      "fixture": "benchmarks/investigator/fixtures/ambiguous_transformer_lineage.json",
+      "expected_audit_status": "attention_required",
+      "expected_check_statuses": {
+        "preprocessing.fit_scope": "review"
+      },
+      "allowed_evidence_ids": ["evidence.preprocessing_fit_scope"],
+      "observations": [
+        {
+          "id": "fit_scope_unverified",
+          "summary": "A transformer fit was observed but its input could not be matched to captured train, test, or full data.",
+          "evidence_ids": ["evidence.preprocessing_fit_scope"],
+          "deterministic_baseline": true
+        }
+      ],
+      "reviewer_questions": [
+        {
+          "id": "ask_derived_training_view",
+          "question": "How was the transformer input derived, and does it contain only training rows?",
+          "rationale": "Reviewer context is required to classify unmatched lineage."
+        }
+      ],
+      "unresolved_assumptions": [
+        {
+          "id": "unknown_transformer_scope",
+          "summary": "The available fingerprints cannot establish whether the fit input is safe or leaky."
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "claim_ambiguous_fit_is_leakage",
+          "claim": "Unmatched fit lineage proves preprocessing leakage."
+        }
+      ]
+    }
+  ]
+}

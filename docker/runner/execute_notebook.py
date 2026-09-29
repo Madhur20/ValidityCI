@@ -17,7 +17,7 @@ from nbclient.exceptions import CellExecutionError, CellTimeoutError
 
 
 SCHEMA_VERSION = "1.8.0"
-INSTRUMENTATION_SCHEMA_VERSION = "1.5.0"
+INSTRUMENTATION_SCHEMA_VERSION = "1.6.0"
 _COLLECTOR_MARKER = "__VALIDITYCI_RUNTIME_V1__"
 _SUPPORTED_METRIC_FUNCTIONS = {
     "accuracy": "accuracy_score",
@@ -41,6 +41,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--entity-column")
     parser.add_argument("--positive-class")
     parser.add_argument("--random-seed", required=True, type=int)
+    parser.add_argument(
+        "--instrumentation-mode",
+        choices=("enabled", "disabled"),
+        default="enabled",
+    )
     parser.add_argument(
         "--execution-variant",
         choices=("observed", "group_isolated_counterfactual"),
@@ -514,12 +519,9 @@ def __validityci_cross_validate(*args, **kwargs):
 __validityci_sklearn_validation.cross_validate = __validityci_cross_validate
 __validityci_model_selection.cross_validate = __validityci_cross_validate
 
-__validityci_original_cv_split__ = __validityci_sklearn_split.BaseCrossValidator.split
-def __validityci_cross_validator_split(self, X, y=None, groups=None):
+def __validityci_record_cv_splits(original_split, adapter, self, X, y=None, groups=None):
     fold_index = 0
-    for train_indices, test_indices in __validityci_original_cv_split__(
-        self, X, y, groups
-    ):
+    for train_indices, test_indices in original_split(self, X, y, groups):
         fold_index += 1
         split_inputs = tuple(
             value for value in (X, y, groups) if value is not None
@@ -532,6 +534,7 @@ def __validityci_cross_validator_split(self, X, y=None, groups=None):
             ))
         parameters = {{
             "split_kind": "cross_validation",
+            "cv_adapter": adapter,
             "fold_index": fold_index,
             "parallel_execution": __validityci_parallel_cv__,
             "entity_overlap": __validityci_entity_overlap(
@@ -543,7 +546,29 @@ def __validityci_cross_validator_split(self, X, y=None, groups=None):
             "split", operation, split_inputs, tuple(split_outputs), parameters
         )
         yield train_indices, test_indices
+
+__validityci_original_cv_split__ = __validityci_sklearn_split.BaseCrossValidator.split
+def __validityci_cross_validator_split(self, X, y=None, groups=None):
+    yield from __validityci_record_cv_splits(
+        __validityci_original_cv_split__, "base_cross_validator", self, X, y, groups
+    )
 __validityci_sklearn_split.BaseCrossValidator.split = __validityci_cross_validator_split
+
+__validityci_iterable_cv_class__ = getattr(
+    __validityci_sklearn_split, "_CVIterableWrapper", None
+)
+if __validityci_iterable_cv_class__ is not None:
+    __validityci_original_iterable_cv_split__ = __validityci_iterable_cv_class__.split
+    def __validityci_iterable_cv_split(self, X, y=None, groups=None):
+        yield from __validityci_record_cv_splits(
+            __validityci_original_iterable_cv_split__,
+            "iterable",
+            self,
+            X,
+            y,
+            groups,
+        )
+    __validityci_iterable_cv_class__.split = __validityci_iterable_cv_split
 
 __validityci_original_getattribute__ = __validityci_sklearn_base.BaseEstimator.__getattribute__
 def __validityci_estimator_getattribute(self, name):
@@ -750,15 +775,25 @@ def main() -> None:
     original_cells: list[Any] = []
     try:
         notebook = nbformat.read(args.notebook, as_version=4)
-        original_cells = _prepare_notebook(
-            notebook,
-            args.metric_name,
-            args.metric_variable,
-            args.entity_column,
-            args.positive_class,
-            args.execution_variant,
-            args.random_seed,
-        )
+        if (
+            args.instrumentation_mode == "disabled"
+            and args.execution_variant != "observed"
+        ):
+            raise ValueError(
+                "Reference execution does not support counterfactual transformation"
+            )
+        if args.instrumentation_mode == "enabled":
+            original_cells = _prepare_notebook(
+                notebook,
+                args.metric_name,
+                args.metric_variable,
+                args.entity_column,
+                args.positive_class,
+                args.execution_variant,
+                args.random_seed,
+            )
+        else:
+            original_cells = list(notebook.cells)
         client = NotebookClient(
             notebook,
             timeout=args.cell_timeout,
@@ -767,8 +802,11 @@ def main() -> None:
             resources={"metadata": {"path": str(args.notebook.parent)}},
         )
         client.execute()
-        metrics, runtime_trace = _extract_runtime(notebook.cells[-1])
-        _restore_notebook(notebook, original_cells)
+        if args.instrumentation_mode == "enabled":
+            metrics, runtime_trace = _extract_runtime(notebook.cells[-1])
+            _restore_notebook(notebook, original_cells)
+        else:
+            metrics, runtime_trace = [], None
         result = {
             "schema_version": SCHEMA_VERSION,
             "execution_id": args.execution_id,

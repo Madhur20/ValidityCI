@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0.0",
+  "snapshots": {
+    "ambiguous_transformer_lineage.json": {
+      "experiment_claim": "Evaluate a binary classification experiment predicting 'target' with 'accuracy' as the declared primary metric.",
+      "recommended_next_action": "Address the evidence-backed findings and rerun the affected evaluation.",
+      "reviewer_questions": [
+        "Can preprocessing be rerun using training data only?",
+        "Does the evaluated data and task match the intended deployment population and decision?"
+      ],
+      "source": "deterministic_fallback",
+      "unresolved_assumptions": [],
+      "verified_observations": [
+        {
+          "evidence_ids": [
+            "evidence.preprocessing_fit_scope"
+          ],
+          "id": "observation.finding.preprocessing_fit_scope_review",
+          "summary": "The transformer input did not match captured train, test, or full data."
+        }
+      ]
+    },
+    "clean_supported_holdout.json": {
+      "experiment_claim": "Evaluate a binary classification experiment predicting 'target' with 'accuracy' as the declared primary metric.",
+      "recommended_next_action": "Review unresolved domain assumptions before approving the experiment.",
+      "reviewer_questions": [
+        "Does the evaluated data and task match the intended deployment population and decision?"
+      ],
+      "source": "deterministic_fallback",
+      "unresolved_assumptions": [],
+      "verified_observations": [
+        {
+          "evidence_ids": [
+            "evidence.entity_overlap"
+          ],
+          "id": "observation.split.entity_overlap.pass",
+          "summary": "No configured entities overlapped."
+        },
+        {
+          "evidence_ids": [
+            "evidence.preprocessing_fit_scope"
+          ],
+          "id": "observation.preprocessing.fit_scope.pass",
+          "summary": "Supported preprocessing was fitted only on training data."
+        }
+      ]
+    },
+    "counterfactual_not_transformable.json": {
+      "experiment_claim": "Evaluate a binary classification experiment predicting 'target' with 'accuracy' as the declared primary metric.",
+      "recommended_next_action": "Resolve incomplete or unsupported evidence, then rerun the audit.",
+      "reviewer_questions": [
+        "Does the evaluated data and task match the intended deployment population and decision?"
+      ],
+      "source": "deterministic_fallback",
+      "unresolved_assumptions": [],
+      "verified_observations": [
+        {
+          "evidence_ids": [
+            "evidence.counterfactual.group_isolated"
+          ],
+          "id": "observation.counterfactual",
+          "summary": "The group-isolated counterfactual was incomplete."
+        }
+      ]
+    },
+    "notebook_cell_failure.json": {
+      "experiment_claim": "Evaluate a binary classification experiment predicting 'target' with 'accuracy' as the declared primary metric.",
+      "recommended_next_action": "Resolve incomplete or unsupported evidence, then rerun the audit.",
+      "reviewer_questions": [
+        "What additional evidence is needed to complete split.entity_overlap?",
+        "What additional evidence is needed to complete preprocessing.fit_scope?",
+        "Does the evaluated data and task match the intended deployment population and decision?"
+      ],
+      "source": "deterministic_fallback",
+      "unresolved_assumptions": [
+        "Entity overlap could not run because execution failed.",
+        "Preprocessing analysis could not run because execution failed.",
+        "Runtime conclusions depending on the failed execution remain unresolved."
+      ],
+      "verified_observations": [
+        {
+          "evidence_ids": [
+            "execution.original"
+          ],
+          "id": "observation.execution.original.failure",
+          "summary": "NameError: missing_model"
+        }
+      ]
+    },
+    "reproducibility_divergence.json": {
+      "experiment_claim": "Evaluate a binary classification experiment predicting 'target' with 'accuracy' as the declared primary metric.",
+      "recommended_next_action": "Address the evidence-backed findings and rerun the affected evaluation.",
+      "reviewer_questions": [
+        "Which randomness, ordering, parallelism, or external state remains uncontrolled?",
+        "Does the evaluated data and task match the intended deployment population and decision?"
+      ],
+      "source": "deterministic_fallback",
+      "unresolved_assumptions": [],
+      "verified_observations": [
+        {
+          "evidence_ids": [
+            "evidence.reproducibility.comparison"
+          ],
+          "id": "observation.finding.reproducibility.diverged",
+          "summary": "Two fresh executions disagreed on metrics and normalized outputs."
+        },
+        {
+          "evidence_ids": [
+            "evidence.reproducibility.comparison"
+          ],
+          "id": "observation.reproducibility",
+          "summary": "Repeated observed executions were diverged."
+        }
+      ]
+    },
+    "unsupported_primary_metric.json": {
+      "experiment_claim": "Evaluate a binary classification experiment predicting 'target' with 'accuracy' as the declared primary metric.",
+      "recommended_next_action": "Resolve incomplete or unsupported evidence, then rerun the audit.",
+      "reviewer_questions": [
+        "How should 'accuracy' be captured from the experiment?",
+        "Does the evaluated data and task match the intended deployment population and decision?"
+      ],
+      "source": "deterministic_fallback",
+      "unresolved_assumptions": [
+        "The declared metric 'accuracy' remains unavailable."
+      ],
+      "verified_observations": [
+        {
+          "evidence_ids": [
+            "execution.original/metric.1"
+          ],
+          "id": "observation.execution.original.metric.1.unsupported",
+          "summary": "'accuracy' metric capture was unsupported: No supported runtime call or manifest variable was observed."
+        }
+      ]
+    }
+  }
+}

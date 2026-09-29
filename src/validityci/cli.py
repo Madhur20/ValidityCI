@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
 from validityci.audit import audit_experiment
+from validityci.investigator_benchmark import (
+    deterministic_baseline_run,
+    load_investigator_benchmark,
+    load_investigator_responses,
+    score_investigator_benchmark,
+)
 from validityci.reporting import write_html, write_json
 from validityci.runner import DEFAULT_RUNNER_IMAGE, DockerRunner
 from validityci.schemas import ResourceLimits
@@ -48,6 +55,25 @@ def build_parser() -> argparse.ArgumentParser:
             "replaced by a configured group-isolated split"
         ),
     )
+    benchmark_parser = subparsers.add_parser(
+        "benchmark-investigator",
+        help="Score structured investigator responses against the benchmark",
+    )
+    benchmark_parser.add_argument(
+        "--benchmark",
+        type=Path,
+        default=Path("benchmarks/investigator/cases.json"),
+    )
+    benchmark_parser.add_argument(
+        "--responses",
+        type=Path,
+        help="Candidate response JSON; omit to score the deterministic baseline",
+    )
+    benchmark_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("build/investigator-benchmark.json"),
+    )
     return parser
 
 
@@ -88,6 +114,28 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"Counterfactual: {report.counterfactual.status}")
             print(f"JSON report: {args.output}")
             print(f"HTML report: {args.html}")
+        elif args.command == "benchmark-investigator":
+            benchmark = load_investigator_benchmark(args.benchmark)
+            if args.responses is None:
+                run = deterministic_baseline_run(benchmark)
+                source = "deterministic baseline"
+            else:
+                responses = load_investigator_responses(args.responses)
+                run = score_investigator_benchmark(benchmark, responses)
+                source = str(args.responses)
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(
+                json.dumps(run.to_dict(), indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            print(f"Investigator benchmark: {source}")
+            print(f"Cases: {len(run.case_scores)}")
+            print(f"Factual support pass rate: {run.factual_support_pass_rate:.3f}")
+            print(f"Mean usefulness: {run.mean_usefulness_score:.3f}")
+            print(f"Release gate: {'passed' if run.passes_release_gate else 'failed'}")
+            print(f"Benchmark report: {args.output}")
+            if not run.passes_release_gate:
+                raise SystemExit(1)
     except (OSError, ValueError) as error:
         print(f"ValidityCI error: {error}", file=sys.stderr)
         raise SystemExit(2) from error

@@ -107,6 +107,7 @@ def run_entity_overlap_check(
                         "runtime_event_id": event.id,
                         "cell_index": event.cell_index,
                         "split_kind": event.parameters.get("split_kind", "holdout"),
+                        "cv_adapter": event.parameters.get("cv_adapter"),
                         "fold_index": event.parameters.get("fold_index"),
                         "train_unique_count": train_count,
                         "test_unique_count": test_count,

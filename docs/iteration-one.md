@@ -29,7 +29,9 @@
 - Associate every supported runtime event with its original notebook cell — implemented
 - Fingerprint datasets with run-scoped HMACs without storing row values or the key — implemented
 - Trace supported `BaseCrossValidator` folds with fold-level lineage — implemented
+- Trace explicit iterable train/test fold pairs through the pinned scikit-learn wrapper — implemented
 - Apply entity-overlap and preprocessing-scope checks independently to every captured fold — implemented
+- Compare instrumented and uninstrumented behavior in the same restricted image — implemented for successful outputs and original-cell failures
 
 Custom split functions, non-scikit-learn estimators, estimator `score`, and third-party metric libraries remain outside the supported surface and are not inferred.
 
@@ -52,10 +54,15 @@ Custom split functions, cross-validation counterfactuals, multiple primary-metri
 
 ## Milestone 6: AI investigator
 
-- Give one agent access only to structured audit tools
-- Require evidence identifiers for every conclusion
-- Reject unsupported generated findings
-- Fall back to deterministic report templates when model output is invalid
+- Define a versioned benchmark with at least 10 expected-summary and reviewer-question cases — initial 13-case rubric completed
+- Score evidence-link accuracy, unsupported claims, questions, assumptions, and deterministic-baseline usefulness separately — implemented
+- Materialize six synthetic report fixtures and add an aggregate benchmark command — implemented
+- Add a read-only structured audit interface and deterministic fallback — implemented
+- Define and test a model-adapter protocol before connecting an external model — implemented with strict validation and an offline fake
+- Give one agent access only to structured audit tools — not yet connected
+- Require evidence identifiers for every conclusion — enforced at the adapter boundary
+- Reject unsupported generated findings — enforced through exact fields and report-scoped supporting IDs
+- Fall back to deterministic report templates when model output is invalid — implemented
 
 ## Validation gate
 

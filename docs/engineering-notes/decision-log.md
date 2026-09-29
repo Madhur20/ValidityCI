@@ -118,10 +118,44 @@ Severity and confidence are reviewer-impact decisions, not incidental presentati
 
 Supported scikit-learn splitters eventually flow through `BaseCrossValidator.split`. The runner wraps that generator, applies scikit-learn's own safe indexing to reconstruct each yielded train/test subset, and emits the existing split-event contract with `split_kind=cross_validation` and a one-based fold index. Existing entity and preprocessing checks can therefore evaluate every fold without a parallel evidence model.
 
-**Tradeoff:** Reconstructing fold subsets adds hashing work proportional to the number of folds, but avoids exporting row indices and keeps lineage comparable with holdout splits. Custom iterable CV objects and splitters that bypass `BaseCrossValidator.split` remain unsupported until they receive explicit adapters.
+**Tradeoff:** Reconstructing fold subsets adds hashing work proportional to the number of folds, but avoids exporting row indices and keeps lineage comparable with holdout splits. This initial decision left iterable CV and splitters bypassing `BaseCrossValidator.split` unsupported; D-026 later added the pinned iterable wrapper while arbitrary custom classes remain outside coverage.
 
 ## D-021 — Make counterfactuals explicit execution variants
 
 A group-isolated counterfactual is one additional restricted execution whose request and result are labeled `group_isolated_counterfactual`. During that run only, the kernel wrapper replaces supported `train_test_split` calls with `GroupShuffleSplit`, safe-indexes every positional input, and records that the transformation was applied. The observed runs remain unchanged and are the only inputs to reproducibility comparison.
 
 **Tradeoff:** The initial comparison accepts exactly one captured primary-metric call and only the supported holdout adapter. This deliberately abstains on custom splits, cross-validation, or ambiguous metric selection, but prevents an intervention from being confused with an observed repetition and preserves the source notebook unchanged.
+
+## D-022 — Gate investigator work on factual support before usefulness
+
+The investigator benchmark scores expected observations and their supporting record IDs separately from reviewer questions and unresolved assumptions. The deterministic baseline includes report-derived observations but no added analysis. A future investigator must improve the usefulness score while retaining exact evidence links, zero unsupported selections, and no forbidden overclaims.
+
+**Tradeoff:** The first evaluator uses semantic rubric IDs rather than judging free-form prose. That makes the correctness gate deterministic and cheap, but later evaluation still needs a reviewed mapping from generated text to rubric concepts plus human measurement of clarity and reviewer time.
+
+## D-023 — Keep investigator access read-only and qualify local artifact IDs
+
+The investigator context exposes explicit retrieval methods over an immutable `AuditReport`; it cannot alter findings, policy impact, or status. Returned values are serialized copies. Evidence, check, and execution IDs are already report-scoped, but metric IDs repeat in each execution, so investigator references use `<execution_id>/<metric_id>`.
+
+**Tradeoff:** Qualified IDs and narrow methods are more verbose than handing a model the entire report. They remove ambiguity, reduce accidental data exposure, and make every supported observation mechanically auditable.
+
+## D-024 — Validate provider output outside the model adapter and fail to a deterministic summary
+
+The investigator adapter has one provider-neutral operation: generate a structured draft from the read-only context. Core code—not provider code—then enforces the exact response fields, unique observation and citation identifiers, non-empty text, and membership of every citation in the current report's supporting-record set. Provider exceptions and invalid drafts return the deterministic evidence-linked summary with a rejection reason.
+
+**Tradeoff:** A strict boundary rejects potentially useful extra fields and does not attempt to repair malformed output. This keeps provider behavior replaceable and prevents permissive parsing from turning unsupported model text into accepted audit conclusions.
+
+## D-025 — Verify instrumentation against a reference run inside the same sandbox
+
+The runner entry point has an explicit reference mode that skips hidden setup, cell markers, wrappers, and the collector while retaining the same image, staged inputs, network denial, resource limits, and output normalization. The production runner defaults to instrumentation enabled; reference mode exists for differential verification and is never an automatic audit fallback.
+
+The comparator accepts either identical normalized user-output fingerprints after two successful runs or the same user-cell failure kind, message, and original cell index. It ignores duration but rejects timeouts, runner errors, missing instrumented traces, and unexpectedly instrumented references.
+
+**Tradeoff:** Each live differential case doubles container work and cannot prove transparency for unsupported libraries or nondeterministic notebooks. It directly tests the supported wrapper surface without weakening isolation or conflating infrastructure failure with behavioral equivalence.
+
+## D-026 — Adapt pinned iterable cross-validation at its concrete wrapper
+
+Scikit-learn converts an explicit iterable of train/test index pairs into its internal `_CVIterableWrapper`. That class implements `split` directly and bypasses the existing `BaseCrossValidator.split` hook, so ValidityCI now wraps both paths through one fold-recording function and records `cv_adapter` provenance.
+
+Each yielded pair is safe-indexed inside the kernel to create the same privacy-minimized fold lineage used by built-in splitters. The raw indices are immediately yielded back to scikit-learn and never enter the runtime trace. Instrumentation schema `1.6.0` identifies this expanded semantic surface.
+
+**Tradeoff:** `_CVIterableWrapper` is a private API, but the runner pins scikit-learn `1.6.1` and now has a live compatibility benchmark. Arbitrary custom splitter classes that bypass both supported hooks remain unsupported rather than inferred.

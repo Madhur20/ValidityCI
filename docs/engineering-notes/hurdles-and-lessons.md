@@ -227,3 +227,63 @@ The group-isolated run intentionally changes partitioning, so comparing it as th
 On the repeated-entity benchmark, the observed row split measured two overlapping entities and accuracy `0.8333333333333334`. The counterfactual applied one supported transformation, measured zero overlap, and produced accuracy `1.0`, for a signed delta of `+0.16666666666666663`. Both executions succeeded in the restricted `0.6.0` image. The report contained no entity IDs, row indices, or fingerprint key.
 
 **Lesson:** A controlled intervention needs its own lineage and interpretation. Reusing execution infrastructure is valuable, but observed-repeat and changed-policy comparisons must remain distinct evidence types.
+
+## H-022 — A useful explanation score can hide unsupported claims
+
+**Type:** Anticipated failure converted into a deterministic benchmark gate
+
+A response can ask excellent reviewer questions while attaching the wrong evidence or overstating what an incomplete audit proves. Collapsing all qualities into one score would allow helpful language to compensate for factual errors.
+
+The initial 13-case benchmark therefore calculates observation recall, evidence-link accuracy, question recall, unresolved-assumption recall, unsupported-claim rate, and overall usefulness separately. Wrong citations, unknown rubric selections, and forbidden claims fail the factual-support gate regardless of usefulness. The deterministic baseline passes factual support but intentionally leaves room for better questions and assumption handling.
+
+**Lesson:** Agent evaluation needs non-compensatory correctness gates. Helpfulness should be optimized only among responses that preserve the deterministic evidence boundary.
+
+## H-023 — Metric IDs are not globally unique inside a report
+
+**Type:** Design issue found while defining investigator tools
+
+Every execution numbers metric artifacts from `metric.1`, so repeated and counterfactual runs can contain the same metric ID. A tool accepting only `metric.1` could silently return the wrong execution's value and still appear evidence-linked.
+
+The read-only investigator API therefore requires both execution and metric ID and publishes the canonical supporting reference as `<execution_id>/<metric_id>`. Benchmark fixtures enforce that form for metric evidence.
+
+**Lesson:** Evidence citation systems must respect the true uniqueness scope of every underlying contract; a locally unique identifier is unsafe when flattened into an agent tool namespace.
+
+## H-024 — A provider-neutral interface is insufficient without a provider-independent validator
+
+**Type:** Anticipated integration failure covered by unit tests
+
+A model SDK adapter could return a plausible object containing an invented evidence ID, an undeclared field such as model-selected severity, or no result at all. If each provider validated its own output, behavior would drift and a new provider could silently weaken the evidence boundary.
+
+The shared investigator runner now validates the exact output shape and every report-scoped citation after the adapter returns. Tests exercise a valid fake response, a hallucinated citation, an unknown field, and a provider exception; every invalid path records the reason and returns the same deterministic fallback.
+
+**Lesson:** Keep correctness enforcement on the trusted side of a replaceable model boundary, and test rejection behavior without requiring a live provider.
+
+## H-025 — Unsupported metric evidence disappeared from the first fallback snapshot
+
+**Type:** Regression found while freezing deterministic investigator output
+
+The first snapshot pass showed that an incomplete report containing an unsupported primary-metric artifact produced no verified observation. The benchmark rubric knew about the qualified metric record, but the fallback summarized findings, checks, failures, reproducibility, and counterfactuals without walking metric artifacts.
+
+The fallback now emits an explicit unsupported observation citing `<execution_id>/<metric_id>`, preserves the missing value as an unresolved assumption, and asks how the metric should be captured. Permanent snapshots cover all six materialized reports, and the adversarial corpus attacks every rubric case.
+
+**Lesson:** Snapshotting abstention paths is valuable because omission can weaken a report without producing an invalid schema or an obvious false claim.
+
+## H-026 — Matching infrastructure failures are not evidence of instrumentation transparency
+
+**Type:** Failure found during the first live differential run
+
+The sandbox initially denied access to the Docker socket. Both paired executions returned the same `container_error`, and the first comparator version classified their matching failure signatures as equivalent. That proved only that both launches failed in the same way; no notebook behavior had been observed.
+
+The comparator now permits failure equivalence only for `cell_failed`, where kind, message, and original cell index must match. Timeouts and runner/container errors fail closed. After Docker access was granted, the full supported-operation notebook produced the same normalized output fingerprint in both modes, and a separate intentional failure preserved `ValueError: differential sentinel` at original cell index 1.
+
+**Lesson:** Differential tests need an admissibility rule for outcomes. Symmetric test-harness failure must not be mistaken for symmetric system behavior.
+
+## H-027 — Iterable folds bypass the base cross-validator hook
+
+**Type:** Compatibility gap verified in the pinned runner
+
+Passing a list of `(train_indices, test_indices)` pairs to `cross_val_score` does not use the ordinary base implementation that ValidityCI previously wrapped. Scikit-learn normalizes the list into `_CVIterableWrapper`, whose concrete `split` method yields the pairs directly.
+
+The new adapter routes both implementations through one recorder and labels their provenance as `base_cross_validator` or `iterable`. In the live two-fold benchmark, both entity-overlap and preprocessing-scope checks passed, all transformer fits matched their fold-training subset, the report contained no indices, and the instrumented/reference output fingerprints matched.
+
+**Lesson:** Interface inheritance does not guarantee calls pass through a base-method hook. Pinned private adapters need focused live benchmarks and explicit versioning.

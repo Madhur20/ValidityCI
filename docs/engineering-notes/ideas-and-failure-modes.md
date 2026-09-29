@@ -84,7 +84,7 @@ To prove entity overlap or preprocessing order, the system needs to know which r
 
 Current response: supported runtime events use run-scoped HMAC fingerprints. The secret key exists only inside the temporary kernel, so equal data can be linked within one execution without creating a cross-run identifier. Entity overlap is computed separately inside the kernel when the declared entity data participates in a supported split; only aggregate counts leave the kernel. Transformer-fit inputs are compared with same-run split lineage to identify pre-split, full-data, test-data, or train-only fitting. This reduces offline guessing risk but intentionally prevents direct fingerprint comparison between repeated executions. Any future stable customer-controlled scope still needs an explicit threat model.
 
-Supported cross-validation extends the same model: fold subsets are reconstructed and fingerprinted inside the kernel, while train/test row indices are discarded rather than serialized. Custom iterable splitters, nested CV, and search APIs still need explicit compatibility benchmarks.
+Supported cross-validation extends the same model: built-in and explicit iterable fold subsets are reconstructed and fingerprinted inside the kernel, while train/test row indices are discarded rather than serialized. Arbitrary custom splitter classes, nested CV, and search APIs still need explicit compatibility benchmarks.
 
 ### A metric value lacks meaning without context
 

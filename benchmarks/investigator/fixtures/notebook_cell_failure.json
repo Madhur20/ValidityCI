@@ -1,0 +1,78 @@
+{
+  "checks": [
+    {
+      "check_id": "split.entity_overlap",
+      "evidence_ids": [],
+      "status": "error",
+      "summary": "Entity overlap could not run because execution failed."
+    },
+    {
+      "check_id": "preprocessing.fit_scope",
+      "evidence_ids": [],
+      "status": "error",
+      "summary": "Preprocessing analysis could not run because execution failed."
+    }
+  ],
+  "config": {
+    "entity_column": "entity_id",
+    "positive_class": "1",
+    "primary_metric": "accuracy",
+    "primary_metric_variable": null,
+    "random_seed": 42,
+    "target_column": "target",
+    "task_type": "binary_classification",
+    "timestamp_column": null
+  },
+  "counterfactual": null,
+  "dataset": {
+    "class_counts": {
+      "0": 15,
+      "1": 5
+    },
+    "columns": [
+      "entity_id",
+      "feature",
+      "target"
+    ],
+    "minority_fraction": 0.25,
+    "path": "synthetic.csv",
+    "row_count": 20,
+    "target_column": "target"
+  },
+  "evidence": [],
+  "executions": [
+    {
+      "duration_ms": 5,
+      "environment": null,
+      "execution_id": "execution.original",
+      "execution_variant": "observed",
+      "failure": {
+        "cell_index": 1,
+        "kind": "notebook_cell_error",
+        "message": "NameError: missing_model"
+      },
+      "metrics": [],
+      "output_fingerprint": null,
+      "runtime_trace": null,
+      "schema_version": "1.8.0",
+      "status": "cell_failed"
+    }
+  ],
+  "findings": [],
+  "notebook": {
+    "cells": [
+      {
+        "cell_type": "code",
+        "index": 0,
+        "source": "# Synthetic investigator benchmark fixture"
+      }
+    ],
+    "code_cells": 1,
+    "markdown_cells": 0,
+    "path": "synthetic.ipynb",
+    "total_cells": 1
+  },
+  "reproducibility": null,
+  "schema_version": "1.9.0",
+  "status": "incomplete"
+}

@@ -13,7 +13,7 @@ This repository contains a static audit and an opt-in restricted notebook runner
 - Metric-suitability check
 - Runtime entity-overlap check for supported splits
 - Runtime preprocessing-fit-scope check for supported transformers
-- Fold-level lineage for supported in-process scikit-learn cross-validation
+- Fold-level lineage for supported in-process scikit-learn splitters and explicit iterable folds
 - Optional group-isolated counterfactual execution with signed metric delta
 - Local execution with no paid services or model API
 - Optional execution in a restricted Docker container
@@ -70,15 +70,21 @@ Each successful run also records an aggregate environment fingerprint derived fr
 
 The `0.6.0` runner includes a separately versioned runtime trace for supported scikit-learn train/test splits, cross-validation folds, estimator and transformer fitting, transformations, predictions, and metric calls. Every event points to the original notebook cell and includes only operation metadata, shapes, fold identity, object classification, and run-scoped HMAC fingerprints. Raw data values, fold indices, and the fingerprint key are never written to the execution result.
 
+The differential benchmark runs the same notebook in two fresh restricted containers: once with hidden instrumentation and once in reference mode without injected cells or wrappers. It requires matching normalized user outputs on success, or the same error, message, and original cell index for a user-code failure. Runner errors and timeouts never count as equivalence.
+
 When `entity_column` is configured and that column or named series is passed to `train_test_split`, the runner computes aggregate train/test entity overlap inside the kernel. A confirmed overlap produces a blocking, high-confidence finding; reports contain only unique counts, overlap count, and overlap rate—not entity values or entity-level hashes.
 
 The preprocessing-fit-scope check compares supported transformer fits with earlier split lineage. Fitting before a split, on the full pre-split dataset, or on the held-out test partition produces a blocking, high-confidence finding; ambiguous or missing lineage is reported as `review` or `unsupported`, never silently passed.
 
-Supported scikit-learn cross-validation splitters emit one privacy-minimized split event per fold. Group isolation and preprocessing scope are evaluated for every fold, so a clean early fold cannot hide overlap or leakage in a later fold.
+Supported scikit-learn cross-validation splitters and explicit iterable `(train_indices, test_indices)` folds emit one privacy-minimized split event per fold. Group isolation and preprocessing scope are evaluated for every fold, so a clean early fold cannot hide overlap or leakage in a later fold. The indices remain inside the kernel and are never serialized.
 
 Finding severity and confidence come from a versioned deterministic policy catalog. Every serialized finding includes its policy ID and version, so reviewer impact is traceable and cannot be improvised independently by each check.
 
 Add `--group-counterfactual` to an executed audit to run one extra, explicitly labeled execution in which a supported `train_test_split` is replaced in memory by `GroupShuffleSplit` using the configured entity column. The source notebook is unchanged, reproducibility still compares only observed runs, and the report shows the observed value, group-isolated value, signed delta, transformation count, and aggregate overlap evidence. The initial adapter requires exactly one captured primary-metric call and does not apply to cross-validation or custom split functions.
+
+The versioned [investigator benchmark](benchmarks/investigator/README.md) now defines 13 clean, flawed, ambiguous, unsupported, failure, and counterfactual cases. Its deterministic scorer separates factual support from usefulness so a future AI investigator must improve reviewer questions and assumption handling without inventing claims or citations.
+
+The benchmark includes six immutable schema-valid audit-report fixtures, permanent deterministic fallback snapshots, a 13-case adversarial response corpus, and an aggregate `benchmark-investigator` CLI command. A narrow read-only context, provider-neutral adapter protocol, strict citation/shape validation, and an offline fake are evaluated without an external model.
 
 ## Run the tests
 

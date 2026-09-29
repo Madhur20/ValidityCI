@@ -266,6 +266,7 @@ def _classify_fit(
             "outcome": outcome,
             "split_event_id": split_event.id,
             "split_kind": split_event.parameters.get("split_kind", "holdout"),
+            "cv_adapter": split_event.parameters.get("cv_adapter"),
             "fold_index": split_event.parameters.get("fold_index"),
         }
     return {
@@ -273,6 +274,7 @@ def _classify_fit(
         "outcome": "unverified_fit_scope",
         "split_event_id": prior_splits[-1].id,
         "split_kind": prior_splits[-1].parameters.get("split_kind", "holdout"),
+        "cv_adapter": prior_splits[-1].parameters.get("cv_adapter"),
         "fold_index": prior_splits[-1].parameters.get("fold_index"),
     }
 

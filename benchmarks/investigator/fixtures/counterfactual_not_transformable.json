@@ -1,0 +1,129 @@
+{
+  "checks": [],
+  "config": {
+    "entity_column": "entity_id",
+    "positive_class": "1",
+    "primary_metric": "accuracy",
+    "primary_metric_variable": null,
+    "random_seed": 42,
+    "target_column": "target",
+    "task_type": "binary_classification",
+    "timestamp_column": null
+  },
+  "counterfactual": {
+    "baseline_execution_id": "execution.original",
+    "baseline_metric_value": 0.8,
+    "counterfactual_execution_id": "execution.counterfactual.group_isolated",
+    "counterfactual_metric_value": 0.8,
+    "kind": "group_isolated_split",
+    "metric_delta": null,
+    "primary_metric": "accuracy",
+    "reason": "No supported train/test split was transformed.",
+    "status": "incomplete",
+    "transformation_count": 0
+  },
+  "dataset": {
+    "class_counts": {
+      "0": 15,
+      "1": 5
+    },
+    "columns": [
+      "entity_id",
+      "feature",
+      "target"
+    ],
+    "minority_fraction": 0.25,
+    "path": "synthetic.csv",
+    "row_count": 20,
+    "target_column": "target"
+  },
+  "evidence": [
+    {
+      "details": {
+        "baseline_execution_id": "execution.original",
+        "baseline_metric_value": 0.8,
+        "counterfactual_execution_id": "execution.counterfactual.group_isolated",
+        "counterfactual_metric_value": 0.8,
+        "kind": "group_isolated_split",
+        "metric_delta": null,
+        "primary_metric": "accuracy",
+        "reason": "No supported train/test split was transformed.",
+        "status": "incomplete",
+        "transformation_count": 0
+      },
+      "id": "evidence.counterfactual.group_isolated",
+      "kind": "group_isolated_counterfactual",
+      "notebook_cells": [],
+      "summary": "The requested counterfactual could not transform a supported split."
+    }
+  ],
+  "executions": [
+    {
+      "duration_ms": 5,
+      "environment": null,
+      "execution_id": "execution.original",
+      "execution_variant": "observed",
+      "failure": null,
+      "metrics": [
+        {
+          "capture_method": "runtime_wrapper",
+          "cell_index": 0,
+          "confusion_matrix": null,
+          "id": "metric.1",
+          "metric_name": "accuracy",
+          "parameters": {},
+          "reason": null,
+          "sample_count": 5,
+          "status": "captured",
+          "value": 0.8
+        }
+      ],
+      "output_fingerprint": "sha256:stable",
+      "runtime_trace": null,
+      "schema_version": "1.8.0",
+      "status": "succeeded"
+    },
+    {
+      "duration_ms": 5,
+      "environment": null,
+      "execution_id": "execution.counterfactual.group_isolated",
+      "execution_variant": "group_isolated_counterfactual",
+      "failure": null,
+      "metrics": [
+        {
+          "capture_method": "runtime_wrapper",
+          "cell_index": 0,
+          "confusion_matrix": null,
+          "id": "metric.1",
+          "metric_name": "accuracy",
+          "parameters": {},
+          "reason": null,
+          "sample_count": 5,
+          "status": "captured",
+          "value": 0.8
+        }
+      ],
+      "output_fingerprint": "sha256:stable",
+      "runtime_trace": null,
+      "schema_version": "1.8.0",
+      "status": "succeeded"
+    }
+  ],
+  "findings": [],
+  "notebook": {
+    "cells": [
+      {
+        "cell_type": "code",
+        "index": 0,
+        "source": "# Synthetic investigator benchmark fixture"
+      }
+    ],
+    "code_cells": 1,
+    "markdown_cells": 0,
+    "path": "synthetic.ipynb",
+    "total_cells": 1
+  },
+  "reproducibility": null,
+  "schema_version": "1.9.0",
+  "status": "incomplete"
+}

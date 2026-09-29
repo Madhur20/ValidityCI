@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0.0",
+  "responses": [
+    {
+      "case_id": "static_accuracy_imbalance",
+      "observations": {
+        "accuracy_imbalance_finding": ["evidence.unrelated"]
+      },
+      "reviewer_question_ids": ["ask_error_costs"],
+      "unresolved_assumption_ids": ["unknown_metric_objective"],
+      "asserted_forbidden_claim_ids": []
+    },
+    {
+      "case_id": "clean_supported_holdout",
+      "observations": {
+        "supported_splits_clean": ["evidence.entity_overlap"],
+        "training_only_preprocessing": ["evidence.preprocessing_fit_scope"]
+      },
+      "reviewer_question_ids": ["ask_external_validity"],
+      "unresolved_assumption_ids": ["unknown_population_match"],
+      "asserted_forbidden_claim_ids": ["claim_universally_valid"]
+    },
+    {
+      "case_id": "entity_overlap_holdout",
+      "observations": {
+        "confirmed_entity_overlap": ["evidence.entity_overlap"],
+        "invented_bias_measurement": ["evidence.entity_overlap"]
+      },
+      "reviewer_question_ids": ["ask_entity_boundary"],
+      "unresolved_assumption_ids": ["unknown_deployment_entity"],
+      "asserted_forbidden_claim_ids": []
+    },
+    {
+      "case_id": "preprocessing_before_holdout",
+      "observations": {
+        "confirmed_preprocessing_leakage": ["evidence.preprocessing_fit_scope"],
+        "entity_isolation_clean": ["evidence.entity_overlap"]
+      },
+      "reviewer_question_ids": ["ask_pipeline_refit", "ask_unlisted_remediation"],
+      "unresolved_assumption_ids": ["unknown_leakage_impact"],
+      "asserted_forbidden_claim_ids": []
+    },
+    {
+      "case_id": "repeated_execution_divergence",
+      "observations": {
+        "execution_diverged": ["evidence.reproducibility.comparison"]
+      },
+      "reviewer_question_ids": ["ask_randomness_sources"],
+      "unresolved_assumption_ids": ["unknown_divergence_cause"],
+      "asserted_forbidden_claim_ids": ["claim_environment_changed"]
+    },
+    {
+      "case_id": "notebook_cell_failure",
+      "observations": {
+        "execution_incomplete": ["execution.repeated"]
+      },
+      "reviewer_question_ids": ["ask_failure_reproduction"],
+      "unresolved_assumption_ids": ["unknown_result_validity"],
+      "asserted_forbidden_claim_ids": []
+    },
+    {
+      "case_id": "unsupported_primary_metric",
+      "observations": {
+        "metric_capture_unsupported": ["execution.original/metric.1"]
+      },
+      "reviewer_question_ids": ["ask_metric_provenance"],
+      "unresolved_assumption_ids": ["unknown_metric_value"],
+      "asserted_forbidden_claim_ids": ["claim_metric_passed"]
+    },
+    {
+      "case_id": "clean_group_cross_validation",
+      "observations": {
+        "all_cv_folds_entity_clean": ["evidence.entity_overlap"],
+        "all_cv_folds_preprocessing_clean": ["evidence.preprocessing_fit_scope"],
+        "accuracy_context_warning": ["evidence.class_distribution"]
+      },
+      "reviewer_question_ids": ["ask_cv_metric_choice"],
+      "unresolved_assumption_ids": ["unknown_cv_generalization", "claim_generalizes_forever"],
+      "asserted_forbidden_claim_ids": []
+    },
+    {
+      "case_id": "cross_validation_preprocessing_leakage",
+      "observations": {
+        "cv_entities_isolated": ["evidence.entity_overlap"],
+        "cv_preprocessing_leaked": ["evidence.entity_overlap"]
+      },
+      "reviewer_question_ids": ["ask_pipeline_encapsulation"],
+      "unresolved_assumption_ids": ["unknown_cv_leakage_impact"],
+      "asserted_forbidden_claim_ids": []
+    },
+    {
+      "case_id": "parallel_cross_validation_lineage",
+      "observations": {
+        "parallel_cv_entities_observed": ["evidence.entity_overlap"],
+        "parallel_preprocessing_unsupported": ["preprocessing.fit_scope"]
+      },
+      "reviewer_question_ids": ["ask_serial_cv_rerun"],
+      "unresolved_assumption_ids": ["unknown_parallel_fit_scope"],
+      "asserted_forbidden_claim_ids": ["claim_no_preprocessing_observed_means_none"]
+    },
+    {
+      "case_id": "group_isolated_counterfactual",
+      "observations": {
+        "observed_entity_overlap_confirmed": ["evidence.entity_overlap"],
+        "counterfactual_metric_compared": ["execution.counterfactual.group_isolated/metric.1"]
+      },
+      "reviewer_question_ids": ["ask_counterfactual_stability"],
+      "unresolved_assumption_ids": ["unknown_counterfactual_generality"],
+      "asserted_forbidden_claim_ids": []
+    },
+    {
+      "case_id": "counterfactual_not_transformable",
+      "observations": {
+        "counterfactual_incomplete": ["evidence.counterfactual.group_isolated"]
+      },
+      "reviewer_question_ids": ["ask_split_adapter"],
+      "unresolved_assumption_ids": ["unknown_counterfactual_result"],
+      "asserted_forbidden_claim_ids": ["claim_missing_counterfactual_is_no_effect"]
+    },
+    {
+      "case_id": "ambiguous_transformer_lineage",
+      "observations": {
+        "fit_scope_unverified": ["execution.original"]
+      },
+      "reviewer_question_ids": ["ask_derived_training_view"],
+      "unresolved_assumption_ids": ["unknown_transformer_scope"],
+      "asserted_forbidden_claim_ids": []
+    }
+  ]
+}

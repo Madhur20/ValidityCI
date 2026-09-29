@@ -545,7 +545,7 @@ Advancement depends on exit criteria, not elapsed weeks.
 
 ### 1. Versioned schemas — completed
 
-The report contract now uses schema version `1.9.0`, immutable slotted models, explicit round-trip serialization, controlled enums, unique identifiers, evidence-reference validation, and versioned finding-policy provenance. Execution records use their own `1.8.0` contract, and runtime traces have an independently versioned `1.5.0` contract.
+The report contract now uses schema version `1.9.0`, immutable slotted models, explicit round-trip serialization, controlled enums, unique identifiers, evidence-reference validation, and versioned finding-policy provenance. Execution records use their own `1.8.0` contract, and runtime traces have an independently versioned `1.6.0` contract.
 
 ### 2. Runner protocol — completed
 
@@ -591,9 +591,13 @@ The runner wraps supported `BaseCrossValidator.split` paths and emits one split 
 
 An opt-in extra execution now intercepts supported `train_test_split` calls and applies `GroupShuffleSplit` using the configured entity values inside the kernel. The source notebook remains unchanged; the report labels both executions, records the applied transformation and aggregate overlap, and shows the signed delta between exactly one observed and counterfactual primary-metric call. Unsupported split shapes, absent entity lineage, execution failures, or ambiguous metric calls remain incomplete.
 
-### 13. Investigator benchmark before agent code
+### 13. Investigator benchmark before agent code — initial rubric completed
 
-Define expected summaries and reviewer questions for at least 10 cases. The future agent must beat the deterministic baseline on usefulness without reducing factual support.
+The versioned benchmark now defines 13 clean, flawed, ambiguous, unsupported, failure, cross-validation, and counterfactual cases. Every case records expected statuses, evidence-backed observation concepts, reviewer questions, unresolved assumptions, and forbidden overclaims. Six synthetic scenarios are materialized as schema-valid audit reports with frozen deterministic fallback snapshots. The aggregate CLI separates factual-support gates from usefulness; its deterministic baseline passes, while a permanent 13-case adversarial corpus fails every factual-support gate. A read-only retrieval surface, provider-neutral adapter protocol, strict output validator, rejection fallback, and offline fake now exist. Free-form provider output still needs a reviewed mapping to rubric concepts before an external model can be evaluated.
+
+The runner also supports a verification-only uninstrumented reference mode. A paired differential harness now confirms equal normalized outputs for the complete supported-operation notebook and equal original-cell failure identity for an intentional error. Infrastructure failures and timeouts cannot pass this comparison.
+
+Runtime trace `1.6.0` adds an explicit adapter for scikit-learn's pinned iterable-CV wrapper. User-supplied fold index pairs now produce the same per-fold fingerprints, aggregate entity-overlap measurements, and preprocessing-scope evidence as supported built-in splitters without exporting the indices. Nested CV and search APIs remain the next adapter boundary.
 
 ## 23. Success definitions
 

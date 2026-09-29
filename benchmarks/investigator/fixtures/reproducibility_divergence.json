@@ -1,0 +1,145 @@
+{
+  "checks": [],
+  "config": {
+    "entity_column": "entity_id",
+    "positive_class": "1",
+    "primary_metric": "accuracy",
+    "primary_metric_variable": null,
+    "random_seed": 42,
+    "target_column": "target",
+    "task_type": "binary_classification",
+    "timestamp_column": null
+  },
+  "counterfactual": null,
+  "dataset": {
+    "class_counts": {
+      "0": 15,
+      "1": 5
+    },
+    "columns": [
+      "entity_id",
+      "feature",
+      "target"
+    ],
+    "minority_fraction": 0.25,
+    "path": "synthetic.csv",
+    "row_count": 20,
+    "target_column": "target"
+  },
+  "evidence": [
+    {
+      "details": {
+        "synthetic_fixture": true
+      },
+      "id": "evidence.reproducibility.comparison",
+      "kind": "reproducibility_comparison",
+      "notebook_cells": [
+        0
+      ],
+      "summary": "Two fresh executions produced different normalized results."
+    }
+  ],
+  "executions": [
+    {
+      "duration_ms": 5,
+      "environment": null,
+      "execution_id": "execution.original",
+      "execution_variant": "observed",
+      "failure": null,
+      "metrics": [
+        {
+          "capture_method": "runtime_wrapper",
+          "cell_index": 0,
+          "confusion_matrix": null,
+          "id": "metric.1",
+          "metric_name": "accuracy",
+          "parameters": {},
+          "reason": null,
+          "sample_count": 5,
+          "status": "captured",
+          "value": 0.8
+        }
+      ],
+      "output_fingerprint": "sha256:first",
+      "runtime_trace": null,
+      "schema_version": "1.8.0",
+      "status": "succeeded"
+    },
+    {
+      "duration_ms": 5,
+      "environment": null,
+      "execution_id": "execution.repeated",
+      "execution_variant": "observed",
+      "failure": null,
+      "metrics": [
+        {
+          "capture_method": "runtime_wrapper",
+          "cell_index": 0,
+          "confusion_matrix": null,
+          "id": "metric.1",
+          "metric_name": "accuracy",
+          "parameters": {},
+          "reason": null,
+          "sample_count": 5,
+          "status": "captured",
+          "value": 0.7
+        }
+      ],
+      "output_fingerprint": "sha256:second",
+      "runtime_trace": null,
+      "schema_version": "1.8.0",
+      "status": "succeeded"
+    }
+  ],
+  "findings": [
+    {
+      "check_id": "reproducibility.repeated_execution",
+      "confidence": "high",
+      "evidence_ids": [
+        "evidence.reproducibility.comparison"
+      ],
+      "id": "finding.reproducibility.diverged",
+      "policy_id": "policy.reproducibility_divergence",
+      "policy_version": "1.0.0",
+      "recommendation": "Identify uncontrolled state before relying on the result.",
+      "severity": "warning",
+      "summary": "Two fresh executions disagreed on metrics and normalized outputs.",
+      "title": "Repeated executions produced different results"
+    }
+  ],
+  "notebook": {
+    "cells": [
+      {
+        "cell_type": "code",
+        "index": 0,
+        "source": "# Synthetic investigator benchmark fixture"
+      }
+    ],
+    "code_cells": 1,
+    "markdown_cells": 0,
+    "path": "synthetic.ipynb",
+    "total_cells": 1
+  },
+  "reproducibility": {
+    "baseline_execution_id": "execution.original",
+    "baseline_metric_values": [
+      0.8
+    ],
+    "environment_match": true,
+    "max_absolute_delta": 0.1,
+    "metric_match": false,
+    "output_match": false,
+    "primary_metric": "accuracy",
+    "reasons": [
+      "Primary metric values differed",
+      "Output fingerprints differed"
+    ],
+    "repeated_execution_id": "execution.repeated",
+    "repeated_metric_values": [
+      0.7
+    ],
+    "status": "diverged"
+  },
+  "schema_version": "1.9.0",
+  "status": "attention_required"
+}

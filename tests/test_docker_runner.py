@@ -82,6 +82,9 @@ class DockerRunnerTests(unittest.TestCase):
         self.assertIn("1", self._option_values(command, "--positive-class"))
         self.assertIn("observed", self._option_values(command, "--execution-variant"))
         self.assertIn("42", self._option_values(command, "--random-seed"))
+        self.assertIn(
+            "enabled", self._option_values(command, "--instrumentation-mode")
+        )
         self.assertNotIn("--privileged", command)
         self.assertEqual(observed["kwargs"]["timeout"], 2)  # type: ignore[index]
 
@@ -169,6 +172,39 @@ class DockerRunnerTests(unittest.TestCase):
         self.assertEqual(result.status, ExecutionStatus.RUNNER_ERROR)
         self.assertEqual(result.failure.kind, "network_policy")  # type: ignore[union-attr]
         run.assert_not_called()
+
+    def test_reference_mode_is_forwarded_to_the_same_restricted_runner(self) -> None:
+        with TemporaryDirectory() as directory:
+            request = self._request(Path(directory))
+            expected = ExecutionResult(
+                execution_id=request.execution_id,
+                status=ExecutionStatus.SUCCEEDED,
+                duration_ms=5,
+                output_fingerprint="sha256:reference",
+            )
+            commands: list[list[str]] = []
+
+            def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+                commands.append(command)
+                if command[1] == "run":
+                    output = self._mount_source(command, "/workspace/output")
+                    (output / "result.json").write_text(
+                        json.dumps(expected.to_dict()), encoding="utf-8"
+                    )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            runner = DockerRunner(instrumentation_enabled=False)
+            with patch("validityci.runner.docker.subprocess.run", side_effect=run):
+                result = runner.execute(request)
+
+        run_command = next(command for command in commands if command[1] == "run")
+        self.assertEqual(result, expected)
+        self.assertIn(
+            "disabled",
+            self._option_values(run_command, "--instrumentation-mode"),
+        )
+        self.assertIn("none", self._option_values(run_command, "--network"))
+        self.assertIn("--read-only", run_command)
 
     def test_missing_docker_binary_becomes_structured_runner_error(self) -> None:
         with TemporaryDirectory() as directory:

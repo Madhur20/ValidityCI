@@ -27,13 +27,22 @@ _CONTAINER_OUTPUT = "/workspace/output"
 class DockerRunner:
     """Execute a notebook with a deliberately narrow Docker sandbox."""
 
-    def __init__(self, image: str = DEFAULT_RUNNER_IMAGE, docker_binary: str = "docker") -> None:
+    def __init__(
+        self,
+        image: str = DEFAULT_RUNNER_IMAGE,
+        docker_binary: str = "docker",
+        *,
+        instrumentation_enabled: bool = True,
+    ) -> None:
         if not image.strip():
             raise ValueError("Docker image cannot be empty")
         if not docker_binary.strip():
             raise ValueError("Docker binary cannot be empty")
+        if not isinstance(instrumentation_enabled, bool):
+            raise TypeError("instrumentation_enabled must be a boolean")
         self._image = image
         self._docker_binary = docker_binary
+        self._instrumentation_enabled = instrumentation_enabled
 
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
         started = time.monotonic()
@@ -241,6 +250,8 @@ class DockerRunner:
             request.execution_variant.value,
             "--random-seed",
             str(request.random_seed),
+            "--instrumentation-mode",
+            "enabled" if self._instrumentation_enabled else "disabled",
         ]
         if request.metric_selector is not None:
             command.extend(

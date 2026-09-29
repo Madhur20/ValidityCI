@@ -1,0 +1,110 @@
+{
+  "checks": [
+    {
+      "check_id": "preprocessing.fit_scope",
+      "evidence_ids": [
+        "evidence.preprocessing_fit_scope"
+      ],
+      "status": "review",
+      "summary": "Transformer fit scope requires reviewer confirmation."
+    }
+  ],
+  "config": {
+    "entity_column": "entity_id",
+    "positive_class": "1",
+    "primary_metric": "accuracy",
+    "primary_metric_variable": null,
+    "random_seed": 42,
+    "target_column": "target",
+    "task_type": "binary_classification",
+    "timestamp_column": null
+  },
+  "counterfactual": null,
+  "dataset": {
+    "class_counts": {
+      "0": 15,
+      "1": 5
+    },
+    "columns": [
+      "entity_id",
+      "feature",
+      "target"
+    ],
+    "minority_fraction": 0.25,
+    "path": "synthetic.csv",
+    "row_count": 20,
+    "target_column": "target"
+  },
+  "evidence": [
+    {
+      "details": {
+        "synthetic_fixture": true
+      },
+      "id": "evidence.preprocessing_fit_scope",
+      "kind": "runtime_preprocessing_fit_scope",
+      "notebook_cells": [
+        0
+      ],
+      "summary": "A transformer fit input did not match a captured partition."
+    }
+  ],
+  "executions": [
+    {
+      "duration_ms": 5,
+      "environment": null,
+      "execution_id": "execution.original",
+      "execution_variant": "observed",
+      "failure": null,
+      "metrics": [
+        {
+          "capture_method": "runtime_wrapper",
+          "cell_index": 0,
+          "confusion_matrix": null,
+          "id": "metric.1",
+          "metric_name": "accuracy",
+          "parameters": {},
+          "reason": null,
+          "sample_count": 5,
+          "status": "captured",
+          "value": 0.8
+        }
+      ],
+      "output_fingerprint": "sha256:stable",
+      "runtime_trace": null,
+      "schema_version": "1.8.0",
+      "status": "succeeded"
+    }
+  ],
+  "findings": [
+    {
+      "check_id": "preprocessing.fit_scope",
+      "confidence": "medium",
+      "evidence_ids": [
+        "evidence.preprocessing_fit_scope"
+      ],
+      "id": "finding.preprocessing_fit_scope_review",
+      "policy_id": "policy.preprocessing_lineage_review",
+      "policy_version": "1.0.0",
+      "recommendation": "Make the derived training-data lineage explicit.",
+      "severity": "warning",
+      "summary": "The transformer input did not match captured train, test, or full data.",
+      "title": "Preprocessing fit scope could not be established"
+    }
+  ],
+  "notebook": {
+    "cells": [
+      {
+        "cell_type": "code",
+        "index": 0,
+        "source": "# Synthetic investigator benchmark fixture"
+      }
+    ],
+    "code_cells": 1,
+    "markdown_cells": 0,
+    "path": "synthetic.ipynb",
+    "total_cells": 1
+  },
+  "reproducibility": null,
+  "schema_version": "1.9.0",
+  "status": "attention_required"
+}

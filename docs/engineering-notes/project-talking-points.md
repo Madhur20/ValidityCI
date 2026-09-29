@@ -62,7 +62,7 @@ After deterministic evidence and an investigator benchmark exist. The proposed a
 - The supported execution environment is intentionally limited to Python, pandas, and scikit-learn.
 - Deterministic checks currently cover metric suitability for imbalanced binary classification, entity overlap, and preprocessing fit scope for supported splits.
 - Runtime capture currently covers six scikit-learn metric functions and aggregate binary confusion counts for label-valued calls; continuous-score confusion evidence, estimator `.score`, custom functions, and third-party metric libraries need explicit support or the manifest fallback.
-- Runtime lineage covers scikit-learn `train_test_split`, `BaseCrossValidator` folds, and `BaseEstimator` fit/transform/predict methods. Custom iterable splitters and third-party operations are outside the initial adapter and cannot yet be detected as observed-but-unsupported calls.
+- Runtime lineage covers scikit-learn `train_test_split`, `BaseCrossValidator` folds, explicit iterable folds, and `BaseEstimator` fit/transform/predict methods. Arbitrary custom splitter classes and third-party operations remain outside the supported adapters.
 - Entity overlap is supported only when the configured entity column or named series is explicitly passed through `train_test_split`; otherwise the check is `unsupported` rather than inferred.
 - Output comparison detects a changed normalized output but does not yet localize the first differing cell or value.
 - Dependency locking and environment fingerprinting are not complete.

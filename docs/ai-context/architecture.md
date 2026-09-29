@@ -44,9 +44,15 @@ Static inspection always happens. Docker execution is optional, and valid static
 | `docker/runner/Dockerfile` | Pinned execution environment and non-root user. |
 | `docker/runner/execute_notebook.py` | Kernel instrumentation, notebook execution, normalization, and container result creation. |
 | `src/validityci/reproducibility.py` | Comparison logic for two terminal execution results. |
+| `src/validityci/differential.py` | Behavioral-equivalence comparison for instrumented and uninstrumented reference executions. |
 | `src/validityci/counterfactual.py` | Validation and signed metric comparison for observed and group-isolated executions. |
 | `src/validityci/policy.py` | Versioned severity/confidence catalog for supported finding outcomes. |
+| `src/validityci/investigator_benchmark.py` | Strict benchmark catalog loader, deterministic baseline, and factual-support/usefulness scorer. |
+| `src/validityci/investigator.py` | Read-only audit retrieval, deterministic fallback, provider-neutral adapter protocol, and strict output validation. |
+| `src/validityci/investigator_fake.py` | Offline deterministic investigator adapter for provider-independent tests and evaluation. |
 | `src/validityci/reporting.py` | JSON and HTML presentation only; it must not create new findings. |
+| `benchmarks/investigator/` | Versioned investigator cases, expected observations/questions, unresolved assumptions, and forbidden claims. |
+| `benchmarks/differential/` | Restricted live harness and failure fixture for instrumentation-transparency checks. |
 | `tests/` | Dependency-free contracts, orchestration, runner, reporting, reproducibility, and trace tests. |
 | `examples/` | Small declared experiments and the full instrumentation benchmark. |
 
@@ -57,12 +63,16 @@ Static inspection always happens. Docker execution is optional, and valid static
 - Docker is one implementation of `Runner`; orchestration must not depend on Docker-specific behavior.
 - Reporting consumes the completed `AuditReport`; it must not reinterpret evidence or change status.
 - Container code emits JSON conforming to the host schema but is deliberately standalone inside the image.
+- Investigator benchmarking consumes stable supporting-record IDs; it cannot change audit findings, policies, or report status.
+- Metric artifact IDs are execution-local, so investigator support references qualify them as `<execution_id>/<metric_id>`.
 
 ## Runtime instrumentation model
 
 The host never rewrites notebook source. The container inserts a setup cell before all original cells, a current-cell marker before each user code cell, and one collector after all original cells; synthetic cells are removed before output fingerprinting.
 
-The setup wraps supported metric functions, `train_test_split`, `BaseCrossValidator.split`, and scikit-learn estimator method access. Cross-validation folds are reconstructed with scikit-learn's safe indexing so later fit inputs match fold-training fingerprints; row indices are not exported. Metric wrappers retain scalar values plus aggregate binary confusion counts relative to the declared positive class; labels and predictions remain inside the kernel. Events are recorded when operations complete, so composite operations such as `fit_transform` can contain nested events before the enclosing event.
+For differential verification only, the same runner can disable injection while preserving the image, input staging, and sandbox policy. The comparator accepts only equal successful output fingerprints or matching original-cell failures; infrastructure failures cannot establish transparency.
+
+The setup wraps supported metric functions, `train_test_split`, `BaseCrossValidator.split`, scikit-learn's pinned iterable-CV wrapper, and estimator method access. Built-in and explicit iterable cross-validation folds are reconstructed with scikit-learn's safe indexing so later fit inputs match fold-training fingerprints; row indices are not exported. Metric wrappers retain scalar values plus aggregate binary confusion counts relative to the declared positive class; labels and predictions remain inside the kernel. Events are recorded when operations complete, so composite operations such as `fit_transform` can contain nested events before the enclosing event.
 
 When an entity column is configured, split instrumentation looks only among values actually passed to `train_test_split`. It computes entity-set intersection inside the kernel and emits aggregate counts; `checks/entity_overlap.py` converts those aggregates into an explicit check result, evidence, and an optional finding.
 

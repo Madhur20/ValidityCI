@@ -151,6 +151,36 @@ class EntityOverlapCheckTests(unittest.TestCase):
         )
         self.assertEqual(findings[0].policy_id, "policy.entity_overlap_confirmed")
 
+    def test_iterable_cross_validation_adapter_is_retained_in_evidence(self) -> None:
+        execution = self._cross_validation_execution((0,))
+        event = execution.runtime_trace.events[0]  # type: ignore[union-attr]
+        adapted = RuntimeEvent(
+            id=event.id,
+            sequence=event.sequence,
+            event_type=event.event_type,
+            operation="sklearn.model_selection._split._CVIterableWrapper.split",
+            cell_index=event.cell_index,
+            inputs=event.inputs,
+            outputs=event.outputs,
+            parameters={**event.parameters, "cv_adapter": "iterable"},
+        )
+        execution = ExecutionResult(
+            execution_id=execution.execution_id,
+            status=execution.status,
+            duration_ms=execution.duration_ms,
+            output_fingerprint=execution.output_fingerprint,
+            runtime_trace=RuntimeTrace(
+                fingerprint_scope_id="scope.iterable", events=(adapted,)
+            ),
+        )
+
+        check, evidence, _ = run_entity_overlap_check(
+            self._config(), (execution,)
+        )
+
+        self.assertEqual(check.status, CheckStatus.PASS)
+        self.assertEqual(evidence[0].details["splits"][0]["cv_adapter"], "iterable")
+
     def test_check_result_round_trips(self) -> None:
         original = CheckResult(
             check_id="split.entity_overlap",
